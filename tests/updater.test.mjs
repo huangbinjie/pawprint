@@ -23,7 +23,12 @@ test('download verifies checksum and size before returning an installable archiv
  const dir=await mkdtemp(path.join(tmpdir(),'pawprint-update-test-'));
  const found=selectRelease(release,'0.11.2');
  const fetcher=async url=>new Response(url.endsWith('.sha256')?`${hash}  ${name}\n`:bytes,{status:200});
- const file=await verifiedDownload(found,dir,fetcher);assert.deepEqual(await readFile(file),bytes);
+ const timeoutCalls=[],originalTimeout=AbortSignal.timeout;
+ AbortSignal.timeout=duration=>{timeoutCalls.push(duration);return originalTimeout(duration)};
+ let file;
+ try{file=await verifiedDownload(found,dir,fetcher)}finally{AbortSignal.timeout=originalTimeout}
+ assert.deepEqual(await readFile(file),bytes);
+ assert.deepEqual(timeoutCalls,[45_000,600_000]);
  await assert.rejects(()=>verifiedDownload(found,dir,async url=>new Response(url.endsWith('.sha256')?`${'a'.repeat(64)}  ${name}\n`:bytes,{status:200})),/EEXIST|校验失败/);
  assert.equal(checksumFrom(`${hash}  ${name}`,name),hash);
  assert.throws(()=>checksumFrom(`${hash}  wrong.zip`,name));
