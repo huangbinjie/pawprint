@@ -33,8 +33,8 @@ export function selectRelease(release, installed) {
   }
   return {version,tag:release.tag_name,notes:release.body?.slice(0,3000)||'',zip:zip.browser_download_url,checksum:checksum.browser_download_url,size:zip.size};
 }
-async function response(url, fetcher) {
-  const r=await fetcher(url,{headers:{'User-Agent':'Pawprint-Updater','Accept':'application/vnd.github+json'},signal:AbortSignal.timeout(45_000)});
+async function response(url, fetcher, timeoutMs=45_000) {
+  const r=await fetcher(url,{headers:{'User-Agent':'Pawprint-Updater','Accept':'application/vnd.github+json'},signal:AbortSignal.timeout(timeoutMs)});
   if(!r.ok) throw new Error(`GitHub 返回 ${r.status}`);
   return r;
 }
@@ -47,7 +47,8 @@ export function checksumFrom(text, filename) {
 export async function verifiedDownload(release, directory, fetcher=fetch) {
   const filename=zipName(release.version);
   const expected=checksumFrom(await (await response(release.checksum,fetcher)).text(),filename);
-  const r=await response(release.zip,fetcher);
+  // The abort signal remains active while the entire 100+ MB body streams.
+  const r=await response(release.zip,fetcher,10 * 60_000);
   if(!r.body) throw new Error('下载包为空。');
   const target=path.join(directory,filename);
   await pipeline(Readable.fromWeb(r.body),createWriteStream(target,{flags:'wx'}));
@@ -108,6 +109,6 @@ export class UpdateService {
       this.set({status:'installing'});
       this.install(this.appPath,staged.ready,staged.root,process.pid);
       this.quit();return this.snapshot();
-    }catch(e){return this.set({status:'error',error:e.message})}
+    }catch(e){return this.set({status:'error',error:e.name==='TimeoutError' || /timeout/i.test(e.message) ? '下载超时，请重试。' : e.message})}
   }
 }

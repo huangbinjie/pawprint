@@ -2,6 +2,10 @@
 
 Release notes for published Pawprint builds. The current desktop app is an unsigned Apple silicon beta.
 
+## 0.11.5
+
+- Allow enough time for verified Mac release downloads on slower connections.
+
 ## 0.11.4
 
 - Move Codex activity bubbles above the pet into a click-through window, preserving the pet hit target.

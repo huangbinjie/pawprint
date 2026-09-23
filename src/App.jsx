@@ -556,7 +556,7 @@ export default function App() {
           </button>
           <div className="version">
             <i />
-            本地养成版 <span>v0.11.4</span>
+            本地养成版 <span>v0.11.5</span>
           </div>
         </div>
       </aside>
@@ -1500,7 +1500,7 @@ export default function App() {
                       state.update?.status === "checking" ? "正在检查更新…" :
                       state.update?.status === "downloading" ? "正在下载并校验…" :
                       state.update?.status === "installing" ? "正在安装并重启…" :
-                      state.update?.status === "error" ? (state.settings.language === "en" ? `Update failed: ${state.update.error}` : `更新失败：${state.update.error}`) : "从 GitHub Release 检查新版本"}</strong>
+                      state.update?.status === "error" ? (state.settings.language === "en" ? `Update failed: ${t(state.update.error)}` : `更新失败：${state.update.error}`) : "从 GitHub Release 检查新版本"}</strong>
                     <p>仅下载 Pawprint 官方仓库的 Apple 芯片 Mac 包；校验 SHA-256、应用标识和版本后安装。安装时会重启应用。</p>
                   </div>
                   <button className="secondary-button" disabled={["checking","downloading","installing"].includes(state.update?.status)} onClick={async () => {
