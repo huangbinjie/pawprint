@@ -2,6 +2,11 @@
 
 Release notes for published Pawprint builds. The current desktop app is an unsigned Apple silicon beta.
 
+## 0.11.4
+
+- Move Codex activity bubbles above the pet into a click-through window, preserving the pet hit target.
+- Restore the optional screen-edge patrol and remove the shrink during turns and tail-chase rotation.
+
 ## 0.11.3
 
 - Move the repository, release source, and website to the `huangbinjie` GitHub account.

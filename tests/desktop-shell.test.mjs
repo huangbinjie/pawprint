@@ -41,3 +41,12 @@ test("floating position survives negative-coordinate monitors and clamps removed
     { x: 1440 - FLOAT_SIZE.width - 24, y: 900 - FLOAT_SIZE.height - 24 },
   );
 });
+
+test("bubble placement stays outside the pet hit box where the screen has room", async () => {
+  const { bubblePosition } = await import("../core/desktop.mjs");
+  const area = { x: 0, y: 25, width: 1440, height: 875 };
+  const size = { width: 210, height: 82 };
+  assert.deepEqual(bubblePosition({ x: 600, y: 400, width: 110, height: 121 }, area, size), { x: 550, y: 310 });
+  const nearTop = bubblePosition({ x: 600, y: 25, width: 110, height: 121 }, area, size);
+  assert.ok(nearTop.x >= 710 || nearTop.x + size.width <= 600 || nearTop.y >= 146);
+});

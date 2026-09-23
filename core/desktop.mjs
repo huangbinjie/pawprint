@@ -32,3 +32,19 @@ export function floatPosition(saved, area, size = FLOAT_SIZE) {
     ),
   };
 }
+
+// A separate click-through bubble can sit above the pet without resizing its hit target.
+export function bubblePosition(pet, area, bubble) {
+  const x = Math.max(area.x, Math.min(
+    Math.round(pet.x + (pet.width - bubble.width) / 2),
+    area.x + area.width - bubble.width,
+  ));
+  const above = pet.y - bubble.height - 8;
+  if (above >= area.y) return { x, y: above };
+  const y = Math.max(area.y, Math.min(pet.y, area.y + area.height - bubble.height));
+  const right = pet.x + pet.width + 8;
+  if (right + bubble.width <= area.x + area.width) return { x: right, y };
+  const left = pet.x - bubble.width - 8;
+  if (left >= area.x) return { x: left, y };
+  return { x, y: Math.max(area.y, Math.min(pet.y + pet.height + 8, area.y + area.height - bubble.height)) };
+}

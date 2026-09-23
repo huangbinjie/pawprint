@@ -299,8 +299,6 @@ export default function App() {
     state.performance?.petId === pet.id &&
     !state.performance.guestId &&
     tick - state.performance.at < (state.performance.duration || 6000);
-  const activityEvent = state.activity?.event;
-  const activityBubble = activityEvent && tick - activityEvent.at < 8000;
   const activityWorking = state.activity?.status === "running";
   const idle = activityWorking || playing || petting ? { mode: "rest", facing: 1, edge: "bottom" } : state.idle || { mode: "rest", facing: 1, edge: "bottom" };
   const desktopStyle = { width: 220, height: 242, transform: `scale(${state.displayScale || 1})`, transformOrigin: "top left", "--desktop-pet-scale": state.displayScale || 1 };
@@ -433,10 +431,6 @@ export default function App() {
   if (isFloating)
     return (
       <div className={`floating-pet minimal idle-${idle.mode}`} data-idle-mode={idle.mode} style={desktopStyle}>
-        {activityBubble && <div className="activity-bubble" role="status">
-          {activityEvent.text}
-          {state.activity.activeCount > (activityEvent.kind === "completed" ? 0 : 1) && <small>还有 {state.activity.activeCount} 个会话在进行</small>}
-        </div>}
         <button
           className={`float-cat-button ${pet ? "" : "float-egg-button"}`}
           data-interactive
@@ -562,7 +556,7 @@ export default function App() {
           </button>
           <div className="version">
             <i />
-            本地养成版 <span>v0.11.3</span>
+            本地养成版 <span>v0.11.4</span>
           </div>
         </div>
       </aside>
@@ -1612,12 +1606,13 @@ export default function App() {
                 <div className="setting-row">
                   <div>
                     <label htmlFor="idle-route"><strong>散步范围</strong></label>
-                    <p>沿当前高度左右散步，保持正面形象。拖到另一块屏幕后，从新位置开始。</p>
+                    <p>沿当前高度左右走，或沿当前屏幕边缘巡游；拖到另一块屏幕后，从新位置开始。</p>
                   </div>
-                  <select id="idle-route" className="idle-route-select" value="line"
+                  <select id="idle-route" className="idle-route-select" value={state.settings.idleRoute || "line"}
                     disabled={working || !state.settings.idleEnabled}
                     onChange={event => command({ type: "idle-settings", enabled: true, route: event.target.value, toys: state.settings.idleToys !== false })}>
                     <option value="line">沿当前位置左右走</option>
+                    <option value="edges">沿屏幕边缘巡游</option>
                   </select>
                 </div>
                 <div className="setting-row">

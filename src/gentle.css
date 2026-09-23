@@ -9,6 +9,11 @@
 .gentle-cat.tailless-look .cat-body { animation: gentle-look 3s ease-in-out infinite; transform-origin:145px 270px; }
 @keyframes gentle-look {0%,35%,100%{transform:rotate(0deg)}12%,24%{transform:rotate(-2deg)}58%,75%{transform:rotate(2deg)}}
 .gentle-cat.skill-starnap .cat-eye {animation:none;transform:scaleY(.12)}
-/* No body mirroring or wall rotation; the unchanged front portrait remains upright. */
-.idle-actor,.idle-actor.edge-left,.idle-actor.edge-top,.idle-actor.edge-right {transform:none}
+/* Keep the same size as the pet turns onto another edge. */
+.idle-actor { transform: scaleX(var(--pet-facing,1)); transition:transform .2s ease-in-out; }
+.idle-actor.edge-top { transform:rotate(180deg) scaleX(var(--pet-facing,1)); }
+.idle-actor.edge-left { transform:rotate(90deg) scaleX(var(--pet-facing,1)); }
+.idle-actor.edge-right { transform:rotate(-90deg) scaleX(var(--pet-facing,1)); }
+.gentle-cat.skill-chase .cat-body {animation-name:gentle-chase}
+@keyframes gentle-chase {0%{transform:rotate(0)}70%,100%{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.gentle-cat .cat-eye,.gentle-cat .cat-tail,.gentle-cat .gentle-ear,.gentle-cat .cat-body{animation:none!important}}

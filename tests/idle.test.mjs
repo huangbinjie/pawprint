@@ -29,15 +29,17 @@ test("horizontal roaming stays at the current height and inside a negative-coord
     assert.equal(sim.position.y, start.y);
   }
 });
-test("legacy edge preference keeps the same upright horizontal route", () => {
+test("edge patrol traverses all four sides without leaving the display", () => {
   const sim = simulation({ route: "edges", area: { x: 0, y: 0, width: 500, height: 500 } });
   sim.relocate({ x: 280, y: 150 });
-  for (let i = 0; i < 2000; i++) {
+  const seen = new Set();
+  for (let i = 0; i < 20000; i++) {
     const result = sim.step();
-    assert.equal(result.visual.edge, "bottom");
+    if (result.visual.mode === "walk") seen.add(result.visual.edge);
     assert.ok(sim.position.x >= 0 && sim.position.x <= 280);
-    assert.equal(sim.position.y, 150);
+    assert.ok(sim.position.y >= 0 && sim.position.y <= 258);
   }
+  assert.deepEqual([...seen].sort(), ["bottom", "left", "right", "top"]);
 });
 test("hover/work/performance blocking pauses immediately, and sleep never produces a jump", () => {
   const sim = simulation();

@@ -70,9 +70,11 @@ test("floating canvas never scrolls; English covers all pages, menus and reactio
     await expect(home.getByTestId('activity-status')).toContainText('Connected; waiting for the next turn');
     const event=type=>JSON.stringify({type:'event_msg',timestamp:new Date().toISOString(),payload:{type,turn_id:'locale-turn'}})+'\n';
     await appendFile(log,event('task_started'));
-    await expect(floating.locator('.activity-bubble')).toHaveText("Let's work together",{timeout:10000});
+    await expect.poll(()=>app.windows().some(w=>w.url().startsWith('data:text/html')),{timeout:10000}).toBe(true);
+    const bubble=app.windows().find(w=>w.url().startsWith('data:text/html'));
+    await expect(bubble.locator('.bubble')).toContainText("Let's work together",{timeout:10000});
     await appendFile(log,event('task_complete'));
-    await expect(floating.locator('.activity-bubble')).toHaveText('This reply is finished',{timeout:10000});
+    await expect(bubble.locator('.bubble')).toContainText('This reply is finished',{timeout:10000});
     await app.close();app=await launch();floating=await app.firstWindow();
     await expect(floating.getByRole('button',{name:'Desktop pet'})).toBeVisible();
     home=await openHome(app,'settings');

@@ -5,7 +5,7 @@ import os from "node:os";
 import { seedMatureCompanion } from "./fixtures/game.mjs";
 import { openHome } from "./helpers.mjs";
 
-test("idle ball, real window roaming, hover stop, upright legacy routes and reduced motion", async ({}, info) => {
+test("idle ball, real window roaming, hover stop, edge patrol and reduced motion", async ({}, info) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "pawprint-idle-ui-"));
   await seedMatureCompanion(dir);
   const codex = path.join(dir, "codex");
@@ -64,14 +64,21 @@ test("idle ball, real window roaming, hover stop, upright legacy routes and redu
     expect(dragged.x).toBeLessThan(paused.x);
     expect(dragged.y).toBeLessThan(paused.y);
     await expect.poll(async () => JSON.parse(await readFile(path.join(dir, "save-v1.json"), "utf8")).settings.floatingPosition).toEqual({ x: dragged.x, y: dragged.y });
-    // Existing edge preferences remain readable, but no longer rotate or climb.
-    await app.evaluate(() => { globalThis.pawTestCursor = { x: -100000, y: -100000 }; });
-    await home.evaluate(() => window.pawprint.command({ type: "idle-settings", enabled: true, route: "edges", toys: false }));
+    // Patrol resumes along the display perimeter and rotates without shrinking.
+    await app.evaluate(({BrowserWindow,screen}) => {
+      globalThis.pawTestCursor = { x: -100000, y: -100000 };
+      const w=BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('#floating'));
+      const a=screen.getDisplayMatching(w.getBounds()).workArea;
+      w.setPosition(a.x+a.width-w.getBounds().width,a.y+30);
+    });
+    await home.getByLabel("散步范围", { exact: true }).selectOption("edges");
     const edgeStart = await bounds();
     await expect(floating.locator(".idle-pose-walk")).toBeVisible({ timeout: 20000 });
-    await expect.poll(async () => Math.abs((await bounds()).x - edgeStart.x)).toBeGreaterThan(8);
-    expect((await bounds()).y).toBe(edgeStart.y);
-    expect(await floating.locator(".idle-actor").evaluate(el => getComputedStyle(el).transform)).toBe("none");
+    await expect(floating.locator(".idle-actor.edge-right")).toBeVisible();
+    await expect.poll(async () => (await bounds()).y).toBeGreaterThan(edgeStart.y + 8);
+    const scales=await floating.locator(".idle-actor").evaluate(el=>{const m=new DOMMatrix(getComputedStyle(el).transform);return [Math.hypot(m.a,m.b),Math.hypot(m.c,m.d)]});
+    for(const scale of scales)expect(scale).toBeCloseTo(1,2);
+    await floating.screenshot({ path: info.outputPath("edge-patrol.png"), omitBackground: true });
     await app.evaluate(({ systemPreferences }) => {
       globalThis.pawOriginalMotion = systemPreferences.getAnimationSettings;
       systemPreferences.getAnimationSettings = () => ({ prefersReducedMotion: true });

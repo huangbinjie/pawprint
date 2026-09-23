@@ -1,3 +1,4 @@
+import { ActivityBubble } from "./activity-bubble.mjs";
 import { UpdateService } from "./updater.mjs";
 import { LanService } from "./lan/service.mjs";
 import { CodexActivity } from "./activity.mjs";
@@ -53,6 +54,7 @@ app.setPath(
     : path.join(app.getPath("appData"), "Pawprint"),
 );
 let home, floating, store, refreshPromise, interval, tray, moveTimer, updates;
+const activityBubble = new ActivityBubble();
 let dragOrigin = null;
 let lan,
   performance = null;
@@ -115,6 +117,7 @@ function snapshot() {
   };
 }
 function broadcast() {
+  syncActivityBubble();
   syncGuests();
   notifyInvites();
   updateTray();
@@ -345,6 +348,14 @@ function createTray(reason = "startup") {
   tray.setToolTip("爪印 · Pawprint");
   updateTray();
 }
+function syncActivityBubble() {
+  const state = activity?.snapshot();
+  const event = state?.event;
+  const pet = floating && !floating.isDestroyed() && floating.isVisible() ? floating.getBounds() : null;
+  const remaining = state?.activeCount > (event?.kind === "completed" ? 0 : 1)
+    ? tr(`还有 ${state.activeCount} 个会话在进行`) : null;
+  activityBubble.update({ pet, event: event ? { ...event, text: tr(event.text) } : null, subtitle: remaining });
+}
 function rememberPosition() {
   clearTimeout(moveTimer);
   if (!floating || floating.isDestroyed() || quitting) return;
@@ -395,6 +406,7 @@ function syncFloating() {
   floating.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   floating.once("ready-to-show", () => floating?.showInactive());
   floating.on("moved", () => {
+    syncActivityBubble();
     const [x, y] = floating.getPosition();
     if (idleTargetPosition?.x === x && idleTargetPosition?.y === y) return;
     clearTimeout(moveTimer);
@@ -404,6 +416,7 @@ function syncFloating() {
   });
   floating.on("closed", () => {
     floating = null;
+    activityBubble.hide();
     dragOrigin = null;
     idleTargetPosition = null;
     idleDirector.reset(Date.now());
@@ -519,6 +532,7 @@ function tickIdle() {
   if (quitting) return;
   const now = Date.now();
   try {
+    syncActivityBubble();
     if (now - motionCheckedAt > 1000) {
       reducedMotion = systemPreferences.getAnimationSettings().prefersReducedMotion;
       motionCheckedAt = now;
@@ -1050,6 +1064,7 @@ else {
     if (process.platform !== "darwin" && !tray) app.quit();
   });
   app.on("before-quit", (event) => {
+    activityBubble.close();
     clearInterval(interval);
     clearInterval(trayWatch);
     clearTimeout(idleTimer);

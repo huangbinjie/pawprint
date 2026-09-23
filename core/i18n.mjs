@@ -2,6 +2,7 @@ import english from "./i18n-en.mjs";
 export const LANGUAGES = ["zh", "en"];
 export const normalizeMessage = text => text.replace(/\s+/g, " ").trim().replace(/([\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "$1");
 const extras = {
+  "沿当前高度左右走，或沿当前屏幕边缘巡游；拖到另一块屏幕后，从新位置开始。": "Walk left and right at the current height, or patrol the edges of this screen. Drag to another display to set a new starting point.",
   "应用更新": "App updates",
   "检查更新": "Check for updates",
   "从 GitHub Release 检查新版本": "Check GitHub Releases for a new version",

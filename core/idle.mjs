@@ -92,9 +92,8 @@ export class IdleDirector {
       this.target = null;
     }
     if (this.visual.mode === "walk") {
-      // Legacy edge preferences now use upright horizontal roaming.
-      const onLine = true;
-      this.visual.edge = "bottom";
+      const onLine = route === "line" || now < this.previewUntil;
+      if (onLine) this.visual.edge = "bottom";
       const jumping = onLine && now >= this.jumpAt && now < this.jumpAt + 1350;
       this.visual.gait = jumping ? "jump" : this.baseGait || "walk";
       this.visual.motionAt = jumping ? this.jumpAt : this.visual.startedAt;
