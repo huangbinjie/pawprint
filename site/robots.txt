@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://huangbinjie.github.io/pawprint/sitemap.xml
