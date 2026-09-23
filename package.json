@@ -1,0 +1,80 @@
+{
+  "name": "pawprint-desktop",
+  "version": "0.11.3",
+  "private": true,
+  "repository": "https://github.com/huangbinjie/pawprint",
+  "homepage": "https://huangbinjie.github.io/pawprint/",
+  "description": "爪印 — 随你的工作一起长大的本地基因宠物",
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "dev": "node scripts/icon.mjs && node scripts/dev.mjs",
+    "start": "electron .",
+    "build": "node scripts/icon.mjs && vite build",
+    "test": "node --test tests/*.test.mjs",
+    "test:ui": "playwright test",
+    "package": "npm run build && electron-builder --mac dir"
+  },
+  "build": {
+    "appId": "studio.binmax.pawprint",
+    "productName": "Pawprint",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "core/**/*",
+      "package.json",
+      "build/*.png"
+    ],
+    "mac": {
+      "category": "public.app-category.entertainment",
+      "identity": null,
+      "icon": "build/icon.png",
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "在同一局域网发现同事的小屋，邀请宠物串门和繁育；不会共享聊天内容或使用记录。",
+        "NSBonjourServices": [
+          "_pawprint._tcp"
+        ],
+        "CFBundleLocalizations": [
+          "en",
+          "zh-Hans"
+        ],
+        "CFBundleDevelopmentRegion": "en"
+      }
+    },
+    "asar": true,
+    "extraResources": [
+      {
+        "from": "electron/install-update.sh",
+        "to": "updater/install-update.sh"
+      },
+      {
+        "from": "build/en.lproj/InfoPlist.strings",
+        "to": "en.lproj/InfoPlist.strings"
+      },
+      {
+        "from": "build/zh-Hans.lproj/InfoPlist.strings",
+        "to": "zh-Hans.lproj/InfoPlist.strings"
+      }
+    ]
+  },
+  "dependencies": {
+    "bonjour-service": "^1.4.4",
+    "lucide-react": "^1.45.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "selfsigned": "^5.5.0"
+  },
+  "devDependencies": {
+    "@babel/parser": "^7.29.9",
+    "@playwright/test": "^1.63.0",
+    "@resvg/resvg-js": "^2.6.2",
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3",
+    "vite": "^8.3.0"
+  },
+  "author": "Binmax"
+}

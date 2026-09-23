@@ -1,0 +1,24 @@
+node_modules/
+dist/
+release/
+test-results/
+playwright-report/
+.DS_Store
+*.log
+work/
+
+# Local history and abandoned motion experiments are not release source.
+docs/PROGRESS-2D.md
+docs/MOTION.md
+src/styles.css
+src/motion-study.css
+src/components/MotionStudy.jsx
+src/components/MotionStudy3D.jsx
+src/components/SideCat.jsx
+src/components/useCatMotion.js
+tests/rig-desktop.spec.mjs
+.env*
+*.pem
+*.key
+*.p12
+*.mobileprovision

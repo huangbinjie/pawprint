@@ -1,0 +1,14 @@
+/* v0.11 artwork stays intact. Motion is deliberately local and infrequent. */
+.gentle-cat .cat-eye { animation: gentle-blink var(--blink-time, 6.7s) ease-in-out infinite; animation-delay: var(--blink-delay, 0s); }
+.gentle-cat .cat-tail { transform-origin: 184px 248px; animation: gentle-tail 9s ease-in-out infinite; }
+.gentle-ear { animation: gentle-ear 12s ease-in-out infinite; }
+.gentle-ear-1 { animation-duration: 15.3s; animation-delay: -7s; }
+@keyframes gentle-blink {0%,40%,46%,100%{transform:scaleY(1)}43%{transform:scaleY(.05)}}
+@keyframes gentle-tail {0%,28%,65%,100%{transform:rotate(0deg)}43%,52%{transform:rotate(var(--tail-angle,-4deg))}}
+@keyframes gentle-ear {0%,61%,69%,100%{transform:rotate(0deg)}64%{transform:rotate(var(--ear-angle,4deg))}67%{transform:rotate(-1deg)}}
+.gentle-cat.tailless-look .cat-body { animation: gentle-look 3s ease-in-out infinite; transform-origin:145px 270px; }
+@keyframes gentle-look {0%,35%,100%{transform:rotate(0deg)}12%,24%{transform:rotate(-2deg)}58%,75%{transform:rotate(2deg)}}
+.gentle-cat.skill-starnap .cat-eye {animation:none;transform:scaleY(.12)}
+/* No body mirroring or wall rotation; the unchanged front portrait remains upright. */
+.idle-actor,.idle-actor.edge-left,.idle-actor.edge-top,.idle-actor.edge-right {transform:none}
+@media(prefers-reduced-motion:reduce){.gentle-cat .cat-eye,.gentle-cat .cat-tail,.gentle-cat .gentle-ear,.gentle-cat .cat-body{animation:none!important}}

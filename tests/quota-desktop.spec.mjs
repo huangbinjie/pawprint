@@ -1,0 +1,50 @@
+import { test, expect, _electron as electron } from "@playwright/test";
+import { mkdtemp, mkdir, writeFile, appendFile } from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import { seedMatureCompanion } from "./fixtures/game.mjs";
+import { openHome } from "./helpers.mjs";
+test("owned badges are in pools and real native tray titles follow remaining quota snapshots", async ({}, info) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "pawprint-quota-ui-"));
+  const profile = path.join(root, "profile"), codex = path.join(root, "codex");
+  await seedMatureCompanion(profile); await mkdir(path.join(codex, "sessions"), { recursive: true });
+  const file = path.join(codex, "sessions/fixture.jsonl");
+  const row = (used, age = 0, reset = Date.now() + 86400000) => JSON.stringify({ type: "event_msg", timestamp: new Date(Date.now() - age).toISOString(), payload: { type: "token_count", rate_limits: { limit_id: "codex", primary: { used_percent: used, window_minutes: 10080, resets_at: Math.floor(reset / 1000) }, secondary: null } } }) + "\n";
+  await writeFile(file, row(62));
+  const app = await electron.launch({ args: ["."], env: { ...process.env, PAWPRINT_TEST_MODE: "1", PAWPRINT_TEST_DATA: profile, PAWPRINT_TEST_CODEX_HOME: codex, PAWPRINT_TEST_LAN: "1" } });
+  try {
+    const home = await openHome(app, "talents");
+    await expect(home.locator(".skill-card")).toHaveCount(17);
+    await expect(home.locator(".skill-owned-badge")).toHaveCount(4);
+    await expect(home.locator('[data-skill-id="ball"]')).toContainText("已拥有");
+    await expect(home.getByRole("heading", { name: "赠送技能", exact: true })).toHaveCount(0);
+    await expect(home.locator(".owned-skills")).toHaveCount(0);
+    await home.locator('[data-skill-id="ball"]').scrollIntoViewIfNeeded();
+    await home.screenshot({ path: info.outputPath("owned-skill-pool.png") });
+    await app.evaluate(({ Tray }) => {
+      const original = Tray.prototype.setTitle;
+      Tray.prototype.setTitle = function(title, ...rest) { globalThis.pawObservedTitle = title; return original.call(this, title, ...rest); };
+    });
+    await home.evaluate(() => window.pawprint.showHome("settings"));
+    const before = (await home.evaluate(() => window.pawprint.getState())).data;
+    await home.getByRole("switch", { name: "图标旁显示剩余额度" }).click();
+    await expect.poll(() => app.evaluate(() => globalThis.pawObservedTitle)).toBe("W 38%");
+    await expect(home.getByTestId("quota-preview")).toContainText("周剩余：38%");
+    await home.screenshot({ path: info.outputPath("quota-settings.png") });
+    await home.getByLabel("显示哪段额度").selectOption("both");
+    await expect.poll(() => app.evaluate(() => globalThis.pawObservedTitle)).toBe("5h — · W 38%");
+    await appendFile(file, row(71));
+    await home.getByRole("button", { name: "重新读取", exact: true }).click();
+    await expect.poll(() => app.evaluate(() => globalThis.pawObservedTitle)).toBe("5h — · W 29%");
+    await writeFile(file, row(71, 16 * 60000));
+    await home.getByRole("button", { name: "重新读取", exact: true }).click();
+    await expect.poll(() => app.evaluate(() => globalThis.pawObservedTitle)).toBe("5h — · W ~29%");
+    await writeFile(file, row(71, 16 * 60000, Date.now() - 1000));
+    await home.getByRole("button", { name: "重新读取", exact: true }).click();
+    await expect.poll(() => app.evaluate(() => globalThis.pawObservedTitle)).toBe("5h — · W —");
+    await home.getByRole("switch", { name: "图标旁显示剩余额度" }).click();
+    await expect.poll(() => app.evaluate(() => globalThis.pawObservedTitle)).toBe("");
+    const after = (await home.evaluate(() => window.pawprint.getState())).data;
+    expect(after.balance).toBe(before.balance); expect(after.pets).toEqual(before.pets);
+  } finally { await app.close(); }
+});

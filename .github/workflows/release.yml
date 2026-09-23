@@ -1,0 +1,41 @@
+name: Build and release Mac app
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  mac-arm64:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check tag matches app version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: test "$GITHUB_REF_NAME" = "v$(node -p 'require("./package.json").version')"
+      - run: npm test
+      - run: npm run build
+      - name: Package Apple silicon app
+        run: npx electron-builder --mac dir --arm64
+      - name: Check contents and prepare archive
+        run: |
+          VERSION=$(node -p 'require("./package.json").version')
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' release/mac-arm64/Pawprint.app/Contents/Info.plist)" = "$VERSION"
+          mkdir -p artifacts
+          ditto -c -k --sequesterRsrc --keepParent release/mac-arm64/Pawprint.app "artifacts/Pawprint-$VERSION-mac-arm64.zip"
+          cd artifacts
+          shasum -a 256 "Pawprint-$VERSION-mac-arm64.zip" > "Pawprint-$VERSION-mac-arm64.zip.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pawprint-mac-arm64
+          path: artifacts/*
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" artifacts/* --generate-notes --verify-tag
