@@ -18,7 +18,7 @@
 
 ## 安装
 
-从 [Releases](https://github.com/huangbinjie/pawprint/releases/latest) 下载最新 Mac 压缩包，解压并把 `Pawprint.app` 放进「应用程序」。当前内测版未签名，macOS 首次打开时可能需要手动允许。在「偏好设置 → 应用更新」可检查新版本，点击「下载并安装」后，应用会校验并更新。
+从 [Releases](https://github.com/huangbinjie/pawprint/releases/latest) 下载最新 Mac 压缩包，并对照附带文件核验 SHA-256。内测版有完整的临时封装签名，但没有 Apple Developer ID 签名和苹果公证。第一次打开时如果提示“Apple 无法验证开发者”，先点“完成”，再到「系统设置 → 隐私与安全性」对 Pawprint 点“仍要打开”并确认。如果提示“已损坏”，请停止安装并反馈该版本。细节见[Mac 内测签名说明](docs/RELEASE_SIGNING.md)。
 
 ## 开发
 
@@ -29,7 +29,7 @@ npm ci
 npm run dev
 ```
 
-`npm test` 运行核心检查，`npm run package` 在本机打包 Apple 芯片版本。推送版本 tag 后，GitHub Actions 自动发布 Mac 安装包；`site/` 更新后自动部署 GitHub Pages。
+`npm test` 运行核心检查，`npm run package:local` 生成带完整临时签名的 Apple 芯片包。发布流程会先核对整个应用签名。推送版本 tag 后，GitHub Actions 自动发布 Mac 安装包；`site/` 更新后自动部署 GitHub Pages。
 
 宠物数据保存在本机。目前没有账号、云同步、现金充值或在线交易。
 

@@ -18,7 +18,7 @@ Pawprint is an independent app and is not affiliated with OpenAI.
 
 ## Install
 
-Download the latest Mac archive from [Releases](https://github.com/huangbinjie/pawprint/releases/latest), unzip it, and move `Pawprint.app` to Applications. The current beta is unsigned, so macOS may ask you to allow it to open. In Preferences → App updates, Pawprint checks new releases and can download, verify, and install one after you click **Download and install**.
+Download the latest Mac archive from [Releases](https://github.com/huangbinjie/pawprint/releases/latest) and verify its SHA-256 file. The beta has a complete ad-hoc bundle signature but is not Apple Developer ID signed or notarized. On first launch, macOS may say it cannot verify the developer: choose Done, then System Settings → Privacy & Security → Open Anyway for Pawprint. If macOS says **damaged**, stop and report that build. See [Mac beta signing](docs/RELEASE_SIGNING.md).
 
 ## Develop
 
@@ -29,7 +29,7 @@ npm ci
 npm run dev
 ```
 
-Run `npm test` for core checks and `npm run package` for a local Apple silicon build. Pushing a version tag builds and publishes a Mac archive through GitHub Actions; changes to `site/` deploy the website through GitHub Pages.
+Run `npm test` for core checks and `npm run package:local` for an ad-hoc signed local Apple silicon build. The release workflow verifies its complete signature before publishing. Pushing a version tag builds and publishes a Mac archive through GitHub Actions; changes to `site/` deploy the website through GitHub Pages.
 
 Pet data stays in the local app profile. There is no account, cloud sync, cash top-up, or online trading.
 

@@ -87,4 +87,4 @@ jobs:
           else
             echo 'Developer ID-signed and Apple-notarized Mac build.' > "$RUNNER_TEMP/release-notes.md"
           fi
-          gh release create "$GITHUB_REF_NAME" artifacts/* --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft
+          gh release create "$GITHUB_REF_NAME" artifacts/* --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag
