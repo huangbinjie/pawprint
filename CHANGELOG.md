@@ -2,6 +2,15 @@
 
 Release notes for published Pawprint builds. The current desktop app is an unsigned Apple silicon beta.
 
+## 0.11.6
+
+- Package the unsigned beta with a complete ad-hoc bundle signature so downloaded Macs show the manual “Open Anyway” Gatekeeper path instead of “damaged.”
+- Check the complete bundle signature before a public release.
+
+## 0.11.6
+
+- Ship a complete ad-hoc signed Mac beta so first launch can use macOS’s per-app Open Anyway flow instead of the damaged-app alert.
+
 ## 0.11.5
 
 - Allow enough time for verified Mac release downloads on slower connections.
