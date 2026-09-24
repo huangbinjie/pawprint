@@ -13,8 +13,8 @@
     "build": "node scripts/icon.mjs && vite build",
     "test": "node --test tests/*.test.mjs",
     "test:ui": "playwright test",
-    "package": "npm run build && electron-builder --mac dir",
-    "package:local": "npm run build && electron-builder --mac dir --arm64 --config.mac.identity=- --config.mac.notarize=false --config.mac.hardenedRuntime=false"
+    "package": "npm run build && electron-builder --mac dir --publish never",
+    "package:local": "npm run build && electron-builder --mac dir --arm64 --config.mac.identity=- --config.mac.notarize=false --config.mac.hardenedRuntime=false --publish never"
   },
   "build": {
     "appId": "studio.binmax.pawprint",
