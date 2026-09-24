@@ -9,7 +9,7 @@ function documentFor(label, subtitle) {
 }
 export class ActivityBubble {
   constructor() { this.window = null; this.key = null; }
-  hide() { if (this.window && !this.window.isDestroyed()) this.window.hide(); this.key = null; }
+  hide() { if (this.key === null) return; this.key = null; if (this.window && !this.window.isDestroyed() && this.window.isVisible()) this.window.hide(); }
   update({ pet, event, subtitle, now = Date.now() }) {
     if (!pet || !event || now - event.at >= 8000) { this.hide(); return; }
     const area = screen.getDisplayMatching(pet).workArea;

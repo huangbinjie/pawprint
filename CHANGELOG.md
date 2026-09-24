@@ -2,6 +2,11 @@
 
 Release notes for published Pawprint builds. The current desktop app is an unsigned Apple silicon beta.
 
+## 0.11.7
+
+- Stop repeatedly hiding an already hidden activity bubble during idle patrol.
+- Pause floating-window rendering while macOS is locked or asleep, and restore it on unlock or wake.
+
 ## 0.11.6
 
 - Package the unsigned beta with a complete ad-hoc bundle signature so downloaded Macs show the manual “Open Anyway” Gatekeeper path instead of “damaged.”

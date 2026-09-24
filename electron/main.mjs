@@ -69,7 +69,7 @@ const desktopScale = () => previewScale ?? petScale(store?.state.settings);
 const desktopSize = (width = FLOAT_SIZE.width) => scaledFloatSize(desktopScale(), width);
 const idleDirector = new IdleDirector({ random: test ? () => 0.8 : Math.random });
 let idleVisual = restingPose(), idleTimer, idleTargetPosition;
-let idlePausedUntil = 0, idleMenuOpen = false, reducedMotion = false, motionCheckedAt = 0;
+let idlePausedUntil = 0, idleMenuOpen = false, reducedMotion = false, motionCheckedAt = 0, screenLocked = false, suspended = false;
 const guestWindows = new Map();
 let previousInvites = new Set();
 const execute = promisify(execFile);
@@ -349,8 +349,10 @@ function createTray(reason = "startup") {
   updateTray();
 }
 function syncActivityBubble() {
+  if (screenLocked || suspended) { activityBubble.hide(); return; }
   const state = activity?.snapshot();
   const event = state?.event;
+  if (!event || Date.now() - event.at >= 8000) { activityBubble.hide(); return; }
   const pet = floating && !floating.isDestroyed() && floating.isVisible() ? floating.getBounds() : null;
   const remaining = state?.activeCount > (event?.kind === "completed" ? 0 : 1)
     ? tr(`还有 ${state.activeCount} 个会话在进行`) : null;
@@ -486,7 +488,7 @@ function endSocial(notify = true) {
   clearTimeout(socialTimer);
   if (!previous) return;
   resizePetWindow(guestWindows.get(previous.visitId));
-  if (previous.hidOwn && store.state.settings.floating && housePets(store.state).length) floating?.showInactive();
+  if (!screenLocked && !suspended && previous.hidOwn && store.state.settings.floating && housePets(store.state).length) floating?.showInactive();
   if (notify && !quitting) broadcast();
 }
 function playSocial(request) {
@@ -533,6 +535,7 @@ function tickIdle() {
   const now = Date.now();
   try {
     syncActivityBubble();
+    if (screenLocked || suspended) { idleDirector.reset(now); return; }
     if (now - motionCheckedAt > 1000) {
       reducedMotion = systemPreferences.getAnimationSettings().prefersReducedMotion;
       motionCheckedAt = now;
@@ -565,7 +568,7 @@ function tickIdle() {
     idleDirector.reset(now);
     publishIdle(restingPose());
   } finally {
-    idleTimer = setTimeout(tickIdle, idleVisual.mode === "walk" ? 33 : 200);
+    idleTimer = setTimeout(tickIdle, screenLocked || suspended ? 2000 : idleVisual.mode === "walk" ? 33 : 200);
     idleTimer.unref?.();
   }
 }
@@ -603,7 +606,7 @@ function perform(petId, guestId) {
   return snapshot();
 }
 function syncGuests() {
-  if (!lan?.auth || quitting) return;
+  if (!lan?.auth || quitting || screenLocked || suspended) return;
   const visitors = lan.snapshot().visitors;
   if (socialPerformance && (!visitors.some(v => v.id === socialPerformance.visitId) || !housePets(store.state).some(p => p.id === socialPerformance.host.id))) endSocial(false);
   for (const [id, window] of guestWindows)
@@ -1031,7 +1034,29 @@ else {
       updateTray();
       syncFloating();
       tickIdle();
-      powerMonitor.on("resume", () => { if (!quitting) createTray("resume"); idleDirector.reset(Date.now()); void quota?.refresh(); });
+      const pauseVisuals = () => {
+        activityBubble.hide();
+        floating?.hide();
+        for (const guest of guestWindows.values()) guest.hide();
+        idleDirector.reset(Date.now());
+      };
+      const restoreVisuals = () => {
+        if (screenLocked || suspended || quitting) return;
+        idleDirector.reset(Date.now());
+        if (store.state.settings.floating && !socialPerformance?.hidOwn) floating?.showInactive();
+        syncGuests();
+        for (const guest of guestWindows.values()) guest.showInactive();
+      };
+      powerMonitor.on("lock-screen", () => { screenLocked = true; pauseVisuals(); });
+      powerMonitor.on("unlock-screen", () => { screenLocked = false; restoreVisuals(); });
+      powerMonitor.on("suspend", () => { suspended = true; pauseVisuals(); });
+      powerMonitor.on("resume", () => {
+        if (quitting) return;
+        suspended = false;
+        createTray("resume");
+        restoreVisuals();
+        void quota?.refresh();
+      });
       screen.on("display-removed", () => {
         if (!floating || floating.isDestroyed()) return;
         const [x, y] = floating.getPosition();

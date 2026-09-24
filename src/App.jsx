@@ -556,7 +556,7 @@ export default function App() {
           </button>
           <div className="version">
             <i />
-            本地养成版 <span>v0.11.6</span>
+            本地养成版 <span>v0.11.7</span>
           </div>
         </div>
       </aside>

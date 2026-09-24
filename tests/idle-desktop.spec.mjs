@@ -79,6 +79,17 @@ test("idle ball, real window roaming, hover stop, edge patrol and reduced motion
     const scales=await floating.locator(".idle-actor").evaluate(el=>{const m=new DOMMatrix(getComputedStyle(el).transform);return [Math.hypot(m.a,m.b),Math.hypot(m.c,m.d)]});
     for(const scale of scales)expect(scale).toBeCloseTo(1,2);
     await floating.screenshot({ path: info.outputPath("edge-patrol.png"), omitBackground: true });
+    await app.evaluate(({powerMonitor})=>powerMonitor.emit('lock-screen'));
+    await expect.poll(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('#floating')).isVisible())).toBe(false);
+    const locked=await bounds();
+    await floating.waitForTimeout(500);
+    expect(await bounds()).toEqual(locked);
+    await app.evaluate(({powerMonitor})=>powerMonitor.emit('unlock-screen'));
+    await expect.poll(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('#floating')).isVisible())).toBe(true);
+    await app.evaluate(({powerMonitor})=>powerMonitor.emit('suspend'));
+    await expect.poll(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('#floating')).isVisible())).toBe(false);
+    await app.evaluate(({powerMonitor})=>powerMonitor.emit('resume'));
+    await expect.poll(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('#floating')).isVisible())).toBe(true);
     await app.evaluate(({ systemPreferences }) => {
       globalThis.pawOriginalMotion = systemPreferences.getAnimationSettings;
       systemPreferences.getAnimationSettings = () => ({ prefersReducedMotion: true });

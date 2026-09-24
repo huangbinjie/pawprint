@@ -24,6 +24,9 @@ test("Codex lifecycle drives transient pet feedback without spending or replayin
     await app.evaluate(({BrowserWindow})=>{
       const original=BrowserWindow.prototype.setIgnoreMouseEvents;
       BrowserWindow.prototype.setIgnoreMouseEvents=function(ignore,...rest){if(this.getTitle()==='Pawprint Activity Bubble')globalThis.pawBubbleIgnoresMouse=ignore;return original.call(this,ignore,...rest)};
+      const originalHide=BrowserWindow.prototype.hide;
+      globalThis.pawBubbleHideCalls=0;
+      BrowserWindow.prototype.hide=function(...args){if(this.getTitle()==='Pawprint Activity Bubble')globalThis.pawBubbleHideCalls++;return originalHide.apply(this,args)};
     });
     await home.getByRole("switch", { name: "Codex 会话联动", exact: true }).click();
     await home.getByRole("switch", { name: "显示大致主题", exact: true }).click();
@@ -59,9 +62,16 @@ test("Codex lifecycle drives transient pet feedback without spending or replayin
     await expect.poll(()=>app.evaluate(({BrowserWindow})=>{
       const b=BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Pawprint Activity Bubble');return b?.isVisible() ?? false;
     }),{timeout:12000}).toBe(false);
+    const hiddenCalls=await app.evaluate(()=>globalThis.pawBubbleHideCalls);
+    await floating.waitForTimeout(650);
+    expect(await app.evaluate(()=>globalThis.pawBubbleHideCalls)).toBe(hiddenCalls);
     await appendFile(file, row("task_complete"));
     await expect.poll(async () => (await home.evaluate(() => window.pawprint.getState())).data.activity.event).toBeNull();
     await home.getByRole("switch", { name: "Codex 会话联动", exact: true }).click();
     await expect(home.getByTestId("activity-status")).toContainText("已关闭");
+  } catch(error) {
+    const info=await app.evaluate(({BrowserWindow})=>({windows:BrowserWindow.getAllWindows().map(w=>({title:w.getTitle(),url:w.webContents.getURL().slice(0,55),visible:w.isVisible()})),activity:globalThis.pawLastActivity||null}));
+    console.log('Bubble diagnostic:',JSON.stringify(info));
+    throw error;
   } finally { await app.close(); }
 });
