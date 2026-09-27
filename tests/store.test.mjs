@@ -17,7 +17,9 @@ test("atomic store persists across restarts and retains previous backup", async 
       JSON.parse(await readFile(`${store.file}.bak`, "utf8")),
       initial,
     );
-    assert.equal((await stat(store.file)).mode & 0o777, 0o600);
+    // Windows uses inherited ACLs, not POSIX owner/group permission bits.
+    if (process.platform !== "win32")
+      assert.equal((await stat(store.file)).mode & 0o777, 0o600);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
