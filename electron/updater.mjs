@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createWriteStream, createReadStream } from 'node:fs';
-import { mkdtemp, rm, stat, lstat } from 'node:fs/promises';
+import { mkdtemp, rm, stat, lstat, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Transform } from 'node:stream';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { execFile, spawn } from 'node:child_process';
@@ -36,9 +37,9 @@ export function selectRelease(release, installed, platform = "darwin", arch = "a
   for(const asset of [zip,checksum]) {
     let u;
     try { u=new URL(asset.browser_download_url); } catch { return null; }
-    if(u.protocol!=='https:' || u.hostname!=='github.com' || !u.pathname.startsWith(`/${RELEASE_REPO}/releases/download/`)) return null;
+    if(u.protocol!=='https:' || u.hostname!=='github.com' || u.pathname!==`/${RELEASE_REPO}/releases/download/${release.tag_name}/${asset.name}`) return null;
   }
-  return {version,tag:release.tag_name,manual:platform === "win32",page:`https://github.com/${RELEASE_REPO}/releases/tag/${encodeURIComponent(release.tag_name)}`,notes:release.body?.slice(0,3000)||'',zip:zip.browser_download_url,checksum:checksum.browser_download_url,size:zip.size};
+  return {version,tag:release.tag_name,manual:false,filename,platform,arch,page:`https://github.com/${RELEASE_REPO}/releases/tag/${encodeURIComponent(release.tag_name)}`,notes:release.body?.slice(0,3000)||'',zip:zip.browser_download_url,checksum:checksum.browser_download_url,size:zip.size};
 }
 async function response(url, fetcher, timeoutMs=45_000) {
   const r=await fetcher(url,{headers:{'User-Agent':'Pawprint-Updater','Accept':'application/vnd.github+json'},signal:AbortSignal.timeout(timeoutMs)});
@@ -51,14 +52,21 @@ export function checksumFrom(text, filename) {
   if(!m || m[2]!==filename) throw new Error('发布包缺少有效校验文件。');
   return m[1].toLowerCase();
 }
-export async function verifiedDownload(release, directory, fetcher=fetch) {
-  const filename=zipName(release.version);
+export async function verifiedDownload(release, directory, fetcher=fetch, onProgress=()=>{}) {
+  const filename=release.filename || zipName(release.version);
+  if (filename !== releaseAssetName(release.version, release.platform || 'darwin', release.arch || 'arm64')) throw new Error('安装包名称不匹配。');
   const expected=checksumFrom(await (await response(release.checksum,fetcher)).text(),filename);
   // The abort signal remains active while the entire 100+ MB body streams.
   const r=await response(release.zip,fetcher,10 * 60_000);
   if(!r.body) throw new Error('下载包为空。');
   const target=path.join(directory,filename);
-  await pipeline(Readable.fromWeb(r.body),createWriteStream(target,{flags:'wx'}));
+  let loaded=0;
+  const meter=new Transform({ transform(chunk,_encoding,done) {
+    loaded+=chunk.length;
+    if(loaded>release.size) return done(new Error('安装包大小与发布记录不一致。'));
+    onProgress({loaded,total:release.size,percent:Math.round(loaded/release.size*100)});done(null,chunk);
+  }});
+  await pipeline(Readable.fromWeb(r.body),meter,createWriteStream(target,{flags:'wx'}));
   const size=(await stat(target)).size;
   if(size!==release.size) throw new Error('安装包大小与发布记录不一致。');
   const hash=createHash('sha256');
@@ -70,12 +78,12 @@ async function bundleValue(appPath,key) {
   const {stdout}=await run('/usr/libexec/PlistBuddy',['-c',`Print ${key}`,path.join(appPath,'Contents/Info.plist')],{timeout:10_000});
   return stdout.trim();
 }
-export async function stageUpdate(release,currentApp,{fetcher=fetch,workArea=tmpdir()}={}) {
+export async function stageUpdate(release,currentApp,{fetcher=fetch,workArea=tmpdir(),onProgress=()=>{}}={}) {
   if(process.platform!=='darwin') throw new Error('目前只支持 Apple 芯片 Mac 更新。');
   const root=await mkdtemp(path.join(workArea,'pawprint-update-'));
   const staged=path.join(root,'Pawprint.app');
   try{
-    const archive=await verifiedDownload(release,root,fetcher);
+    const archive=await verifiedDownload(release,root,fetcher,onProgress);
     await run('/usr/bin/ditto',['-x','-k',archive,root],{timeout:180_000});
     if(!(await lstat(staged)).isDirectory()) throw new Error('安装包缺少 Pawprint.app。');
     if(await bundleValue(staged,'CFBundleIdentifier')!=='studio.binmax.pawprint') throw new Error('安装包应用标识不匹配。');
@@ -85,16 +93,36 @@ export async function stageUpdate(release,currentApp,{fetcher=fetch,workArea=tmp
     return {root,ready};
   }catch(e){await rm(root,{recursive:true,force:true});throw e}
 }
+export async function stageWindowsUpdate(release,_currentApp,{fetcher=fetch,workArea=tmpdir(),onProgress=()=>{}}={}) {
+  const root=await mkdtemp(path.join(workArea,'pawprint-update-'));
+  try {
+    const ready=await verifiedDownload(release,root,fetcher,onProgress);
+    const hash=createHash('sha256');
+    for await(const chunk of createReadStream(ready)) hash.update(chunk);
+    return {root,ready,sha256:hash.digest('hex')};
+  } catch(error) { await rm(root,{recursive:true,force:true});throw error; }
+}
+function detached(command,args,options={}) {
+  return new Promise((resolve,reject)=>{
+    const child=spawn(command,args,{detached:true,stdio:'ignore',...options});
+    child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});
+  });
+}
 export function launchInstaller(currentApp,ready,root,pid) {
-  // All arguments are local paths we created; the script waits until the running app exits.
   const script=path.join(process.resourcesPath,'updater/install-update.sh');
-  const child=spawn('/bin/sh',[script,currentApp,ready,root,String(pid)],{detached:true,stdio:'ignore'});
-  child.unref();
+  return detached('/bin/sh',[script,currentApp,ready,root,String(pid)]);
+}
+export async function launchWindowsInstaller(currentApp,ready,root,pid,sha256,{scriptPath=path.join(process.resourcesPath,'updater/install-update.ps1')}={}) {
+  const script=await readFile(scriptPath,'utf8');
+  // Run our packaged helper as a command. No execution-policy changes, shell
+  // interpolation of paths, or machine-wide security settings are needed.
+  return detached('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,env:{...process.env,
+    PAWPRINT_UPDATE_INSTALLER:ready,PAWPRINT_UPDATE_CURRENT:currentApp,PAWPRINT_UPDATE_ROOT:root,PAWPRINT_UPDATE_PID:String(pid),PAWPRINT_UPDATE_SHA256:sha256}});
 }
 export class UpdateService {
-  constructor({installed,appPath,onChange=()=>{},fetcher=fetch,install=launchInstaller,quit=()=>{},platform=process.platform,arch=process.arch,openExternal}){
+  constructor({installed,appPath,onChange=()=>{},fetcher=fetch,install,stage,quit=()=>{},platform=process.platform,arch=process.arch,openExternal}){
     this.platform=platform;this.arch=arch;this.openExternal=openExternal;
-    this.installed=installed;this.appPath=appPath;this.onChange=onChange;this.fetcher=fetcher;this.install=install;this.quit=quit;
+    this.installed=installed;this.appPath=appPath;this.onChange=onChange;this.fetcher=fetcher;this.install=install || (platform==='win32'?launchWindowsInstaller:launchInstaller);this.stage=stage || (platform==='win32'?stageWindowsUpdate:stageUpdate);this.quit=quit;
     this.state={status:'idle',release:null,error:null,checkedAt:null};
   }
   snapshot(){return {...this.state,release:this.state.release && {manual:this.state.release.manual,version:this.state.release.version,tag:this.state.release.tag,notes:this.state.release.notes,size:this.state.release.size}}}
@@ -113,16 +141,10 @@ export class UpdateService {
   async installLatest(){
     const release=this.state.release;
     if(this.state.status!=='available'||!release) throw new Error('请先检查新版本。');
-    if (release.manual) {
-      try {
-        await this.openExternal(release.page);
-        return this.snapshot();
-      } catch (e) { return this.set({status:'error',error:e.message}); }
-    }
-    this.set({status:'downloading',error:null});
-    try{const staged=await stageUpdate(release,this.appPath,{fetcher:this.fetcher});
+    this.set({status:'downloading',error:null,progress:{loaded:0,total:release.size,percent:0}});
+    try{const staged=await this.stage(release,this.appPath,{fetcher:this.fetcher,onProgress:progress=>{if(!this.lastProgress || Date.now()-this.lastProgress>200 || progress.percent===100){this.lastProgress=Date.now();this.set({progress});}}});
       this.set({status:'installing'});
-      this.install(this.appPath,staged.ready,staged.root,process.pid);
+      await this.install(this.appPath,staged.ready,staged.root,process.pid,staged.sha256);
       this.quit();return this.snapshot();
     }catch(e){return this.set({status:'error',error:e.name==='TimeoutError' || /timeout/i.test(e.message) ? '下载超时，请重试。' : e.message})}
   }

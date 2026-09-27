@@ -1,5 +1,9 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("pawprint", {
+  assistantModelsRefresh: () => ipcRenderer.invoke('paw:assistant-models-refresh'),
+  assistantModelDownload: model => ipcRenderer.invoke('paw:assistant-model-download', model),
+  assistantModelUse: model => ipcRenderer.invoke('paw:assistant-model-use', model),
+  assistantModelCancel: () => ipcRenderer.invoke('paw:assistant-model-cancel'),
   assistantConfigure: input => ipcRenderer.invoke('paw:assistant-configure', input),
   assistantProfile: (id, value) => ipcRenderer.invoke('paw:assistant-profile', id, value),
   assistantProbe: () => ipcRenderer.invoke('paw:assistant-probe'),

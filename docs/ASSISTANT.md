@@ -4,21 +4,21 @@ Pawprint 只提供宠物性格、文字对话界面和受限操作工具，不�
 
 ## 本机模型：单独安装与下载
 
-### Ollama
+### Ollama：应用内选择、下载并使用
 
-1. 从 [Ollama 官网](https://ollama.com/download) 安装并运行。
-2. 可先试 [Qwen3 8B](https://ollama.com/library/qwen3:8b)：
+首次从 [Ollama 官网](https://ollama.com/download) 安装一次。之后在 Pawprint 选择 Ollama，就能看到推荐模型和已有模型列表。
 
-   ```sh
-   ollama pull qwen3:8b
-   ```
+- Qwen3 4B：约 2.5 GB，建议至少 8 GB 内存。
+- Qwen3 8B：约 5.2 GB，建议至少 16 GB 内存，优先推荐日常使用。
+- Qwen3 14B：约 9.3 GB，建议至少 24 GB 内存，通常更慢。
 
-3. 内存充足且更重视质量时，可试 [Qwen3 14B](https://ollama.com/library/qwen3:14b)。响应速度和效果需要在自己的电脑上验证，不承诺达到云端旗舰模型水平。
-4. 在 Pawprint 选择 Ollama，地址填 `http://127.0.0.1:11434/v1`，模型填实际下载的名称，通常无需 key。保存并测试连接。
+点击“下载并使用”后，Pawprint 会连接或启动已安装的 Ollama、显示下载进度、试运行模型，再自动保存连接并开启文字助手。不需要复制地址或输入命令。下载可取消，再次点击由 Ollama 继续处理；已安装的模型可以直接点击“使用”。试运行失败不会切换你的聊天模型。
+
+若需要连接非默认地址，可展开高级连接设置。模型大小为近似值，运行内存还取决于上下文和其他应用占用。
 
 ### LM Studio
 
-从 [LM Studio 官网](https://lmstudio.ai/download) 安装。自行下载、加载模型并开启本地服务器，在 Pawprint 填写服务器地址和模型标识。模型文件由 Ollama / LM Studio 管理，Pawprint 不下载或删除它们。
+从 [LM Studio 官网](https://lmstudio.ai/download) 安装。自行下载、加载模型并开启本地服务器，在 Pawprint 填写服务器地址和模型标识。模型文件由 Ollama / LM Studio 管理，Pawprint 通过 Ollama 的本机接口发起下载，不打包推理引擎，也不删除外部模型。
 
 ## 云端 API
 
@@ -44,4 +44,4 @@ key 经 Electron safeStorage 加密，拒绝明文降级，不返回渲染进程
 
 Pawprint now connects to your own model service. It includes no model weights, inference runtime, speech recognition or microphone access. Install Ollama or LM Studio separately and download a suitable model, or configure your own MiMo, DeepSeek, OpenAI or compatible API key.
 
-Text requests are sent only when you submit a message or test the connection. “End conversation” cancels the active request and clears the current pet’s context; “Turn off now” disables the assistant. Pet personalities and encrypted provider keys are preserved during migration. Old app-managed built-in model caches are removed, without touching external model stores.
+The Ollama catalog can download, test and automatically connect a model after you click Download and use. A one-time Ollama installation is required. Text requests are sent when you submit a message, test a connection or test a downloaded model. “End conversation” cancels the active request and clears the current pet’s context; “Turn off now” disables the assistant. Pet personalities and encrypted provider keys are preserved during migration. Old app-managed built-in model caches are removed, without touching external model stores.

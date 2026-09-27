@@ -557,7 +557,7 @@ export default function App() {
           </button>
           <div className="version">
             <i />
-            本地养成版 <span>v{state.appVersion || "0.11.9"}</span>
+            本地养成版 <span>v{state.appVersion || "0.11.10"}</span>
           </div>
         </div>
       </aside>
@@ -1502,17 +1502,18 @@ export default function App() {
                       state.update?.status === "downloading" ? "正在下载并校验…" :
                       state.update?.status === "installing" ? "正在安装并重启…" :
                       state.update?.status === "error" ? (state.settings.language === "en" ? `Update failed: ${t(state.update.error)}` : `更新失败：${state.update.error}`) : "从 GitHub Release 检查新版本"}</strong>
-                    <p>{state.platform === "win32" ? "Windows 更新会打开官方发布页。下载 Windows x64 安装包，核对 SHA-256 后退出爪印并运行安装程序；存档会保留。" : "仅下载 Pawprint 官方仓库的 Apple 芯片 Mac 包；校验 SHA-256、应用标识和版本后安装。安装时会重启应用。"}</p>
+                    <p>{state.platform === "win32" ? "自动下载 Windows 安装包并校验，保存后退出安装并自动重启；宠物与设置会保留。" : "仅下载 Pawprint 官方仓库的 Apple 芯片 Mac 包；校验 SHA-256、应用标识和版本后安装。安装时会重启应用。"}</p>
                   </div>
                   <button className="button secondary small" disabled={["checking","downloading","installing"].includes(state.update?.status)} onClick={async () => {
                     const r = await api.checkUpdates();
                     if (!r.ok) setToast({text:r.error,error:true});
                   }}><RefreshCw size={14} />检查更新</button>
                 </div>
+                {state.update?.status === 'downloading' && <div role="status"><progress aria-label="更新下载进度" max="100" value={state.update.progress?.percent || 0} /><span> {state.update.progress?.percent || 0}%</span></div>}
                 {state.update?.status === "available" && <button className="button primary" onClick={async () => {
                   const r = await api.installUpdate();
                   if (!r.ok) setToast({text:r.error,error:true});
-                }}>{state.update.release.manual ? (state.settings.language === "en" ? `Open download page for v${state.update.release.version}` : `打开 v${state.update.release.version} 下载页`) : (state.settings.language === "en" ? `Download and install v${state.update.release.version}` : `下载并安装 v${state.update.release.version}`)}</button>}
+                }}>{state.update.release.manual ? (state.settings.language === "en" ? `Open download page for v${state.update.release.version}` : `打开 v${state.update.release.version} 下载页`) : (state.settings.language === "en" ? `Update to v${state.update.release.version}` : `立即更新到 v${state.update.release.version}`)}</button>}
               </section>
               <AssistantSettings state={state} />
               <QuotaSettings state={state} now={tick} working={working} onCommand={command} onRecover={async () => {

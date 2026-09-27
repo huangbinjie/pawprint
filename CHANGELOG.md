@@ -2,6 +2,15 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.11.10
+
+- Download and use recommended Ollama models directly from Pawprint, with progress, cancellation, existing-model discovery, a trial run and automatic connection setup.
+- Detect a missing Ollama installation and guide the one-time setup; start an installed local service when needed.
+- Add verified in-app Windows updates: download, save and quit, install to the existing location, and restart while preserving user data.
+- Show update download progress and notify when a new version is available.
+
+Windows 0.11.9 and earlier still need one manual installation of this version to gain in-app updates.
+
 ## 0.11.9
 
 - Add an opt-in text pet assistant with Ollama, LM Studio, MiMo, DeepSeek, OpenAI and compatible APIs.

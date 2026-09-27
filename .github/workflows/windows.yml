@@ -33,6 +33,9 @@ jobs:
       - run: npm run package:win
       - name: Smoke test packaged Windows app
         run: npx playwright test tests/windows-desktop.spec.mjs
+      - name: Verify in-app Windows upgrade and restart
+        shell: pwsh
+        run: ./tests/windows-update.ps1
       - name: Prepare checksum
         shell: pwsh
         run: |

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { PROVIDERS } from '../../core/assistant.mjs';
+import LocalModels from './LocalModels.jsx';
 import RawText from '../i18n/RawText.jsx';
 import './assistant.css';
 const api = window.pawprint;
@@ -32,43 +33,34 @@ export default function AssistantSettings({ state }) {
     setText(''); setNotice(result.ok ? tx('聊天已结束，对话上下文已清空。', 'Conversation ended and context cleared.') : result.error);
   };
   const help = id => call(() => api.assistantHelp(id));
+  const modelBusy = ['connecting', 'starting', 'downloading', 'testing'].includes(state.localModels?.status);
   const local = ['ollama', 'lmstudio'].includes(draft.provider);
   return <section className="card settings-card assistant-settings" data-testid="assistant-settings">
     <div className="section-title"><h3>{tx('宠物助手', 'Pet assistant')}</h3><span className="chip">{current.enabled ? tx('已开启', 'Enabled') : tx('默认关闭', 'Off by default')}</span></div>
     <p>{tx('连接你自己的模型，与宠物文字聊天或让它打开网站和应用。Pawprint 不再内置模型或语音监听。', 'Connect your own model to chat by text or open websites and apps. Pawprint no longer bundles models or voice listening.')}</p>
     {current.migrationNotice && <p className="assistant-notice">{tx('旧版内置模型与语音监听已移除，宠物性格和已保存的 key 已保留。请选择自己的模型服务。', 'Old built-in models and voice listening were removed. Pet personalities and saved keys are preserved. Choose your own model service.')}</p>}
     {(notice || current.error) && <p className="assistant-notice" role="status"><RawText>{current.error || notice}</RawText></p>}
-    <label className="assistant-check"><input type="checkbox" checked={draft.enabled} onChange={e => update({ enabled: e.target.checked })} />{tx('开启宠物助手', 'Enable pet assistant')}</label>
+    <label className="assistant-check"><input type="checkbox" checked={draft.enabled} disabled={modelBusy} onChange={e => update({ enabled: e.target.checked })} />{tx('开启宠物助手', 'Enable pet assistant')}</label>
     <h4>{tx('1 · 选择自己的模型', '1 · Choose your model')}</h4>
     <div className="assistant-buttons">
-      {['ollama', 'lmstudio', 'mimo', 'deepseek', 'openai'].map(provider => <button key={provider} className={`button ${draft.provider === provider ? 'primary' : 'secondary'} small`} onClick={() => chooseProvider(provider)}>{provider === 'mimo' ? tx('小米 MiMo', 'Xiaomi MiMo') : PROVIDERS[provider].label}</button>)}
+      {['ollama', 'lmstudio', 'mimo', 'deepseek', 'openai'].map(provider => <button key={provider} className={`button ${draft.provider === provider ? 'primary' : 'secondary'} small`} disabled={modelBusy} onClick={() => chooseProvider(provider)}>{provider === 'mimo' ? tx('小米 MiMo', 'Xiaomi MiMo') : PROVIDERS[provider].label}</button>)}
     </div>
-    <label>{tx('模型来源', 'Model source')}<select aria-label={tx('模型来源', 'Model source')} value={draft.provider} onChange={e => e.target.value ? chooseProvider(e.target.value) : update({ provider: '', baseURL: '', model: '' })}>
+    <label>{tx('模型来源', 'Model source')}<select aria-label={tx('模型来源', 'Model source')} value={draft.provider} disabled={modelBusy} onChange={e => e.target.value ? chooseProvider(e.target.value) : update({ provider: '', baseURL: '', model: '' })}>
       <option value="">{tx('请选择模型服务', 'Choose a model service')}</option>
       {Object.entries(PROVIDERS).map(([id, p]) => <option key={id} value={id}>{id === 'custom' ? tx('自定义兼容接口', 'Custom compatible API') : id === 'mimo' ? tx('小米 MiMo', 'Xiaomi MiMo') : p.label}</option>)}
     </select></label>
-    {local && <div className="assistant-guide">
-      <strong>{tx('模型由你独立下载和运行', 'Download and run models separately')}</strong>
-      {draft.provider === 'ollama' ? <>
-        <p>{tx('安装 Ollama 后，建议先试 Qwen3 8B；内存充足时可试 14B，通常更慢。模型效果需要实际体验，Pawprint 不会自动下载。', 'Install Ollama and try Qwen3 8B first. With enough memory, try 14B, which is usually slower. Evaluate the model yourself; Pawprint does not download it automatically.')}</p>
-        <div className="assistant-buttons"><button className="button secondary small" onClick={() => help('ollama')}>{tx('下载 Ollama（官网）', 'Download Ollama (official)')}</button><button className="button secondary small" onClick={() => help('qwen8')}>{tx('Qwen3 8B 模型页', 'Qwen3 8B model page')}</button><button className="button secondary small" onClick={() => help('qwen14')}>{tx('Qwen3 14B 模型页', 'Qwen3 14B model page')}</button></div>
-        <code>ollama pull qwen3:8b</code>
-        <p>{tx('保持 Ollama 在运行，填写实际下载的模型名称，然后保存并测试连接。', 'Keep Ollama running, enter the model name you downloaded, save and test the connection.')}</p>
-      </> : <>
-        <p>{tx('在 LM Studio 中搜索并下载合适的模型，加载模型并开启本地服务器，再把服务器地址和模型标识填到下方。', 'Download and load a model in LM Studio, enable its local server, then enter the server URL and model identifier below.')}</p>
-        <button className="button secondary small" onClick={() => help('lmstudio')}>{tx('下载 LM Studio（官网）', 'Download LM Studio (official)')}</button>
-      </>}
-    </div>}
-    {draft.provider && <>
+    {draft.provider === 'ollama' && <LocalModels state={state.localModels} language={state.settings.language} onConfigured={data => { requestId.current++; setBusy(false); setDraft(data); setDirty(false); setKey(''); setClearKey(false); setNotice(tx('模型已就绪，已自动保存连接，可以聊天了。', 'Model ready. Connection saved; you can chat now.')); }} />}
+    {draft.provider === 'lmstudio' && <div className="assistant-guide"><p>{tx('在 LM Studio 下载并加载模型，开启本地服务器后填写下方连接信息。想一键下载并使用，可以选择 Ollama。', 'Load a model and start the server in LM Studio, then enter its connection below. Choose Ollama for one-click model downloads.')}</p><button className="button secondary small" onClick={() => help('lmstudio')}>{tx('下载 LM Studio（官网）', 'Download LM Studio (official)')}</button></div>}
+    {draft.provider && <details open={draft.provider !== 'ollama'}><summary>{local ? tx('高级连接设置（可选）', 'Advanced connection (optional)') : tx('填写 API 连接', 'API connection')}</summary>
       {!local && <><p>{tx('填写供应商提供的 key 和模型名称。需要兼容 Chat Completions；执行操作还要求支持工具调用。只有你发送文字时才会请求模型，角色资料及当前对话会发给所选服务。', 'Enter your provider’s key and model name. Chat Completions compatibility is required, plus tool calling for actions. Requests happen only when you send text; character details and current conversation go to the selected service.')}</p>
         {['mimo', 'deepseek', 'openai'].includes(draft.provider) && <button className="button secondary small" onClick={() => help(draft.provider)}>{tx('打开供应商平台', 'Open provider platform')}</button>}</>}
       <label>API Base URL<input aria-label="API Base URL" value={draft.baseURL} onChange={e => update({ baseURL: e.target.value })} placeholder="https://example.com/v1" spellCheck={false} /></label>
       <label>{tx('模型名称', 'Model name')}<input aria-label={tx('模型名称', 'Model name')} value={draft.model} onChange={e => update({ model: e.target.value })} placeholder={tx('填写供应商或本机提供的模型标识', 'Enter your model identifier')} spellCheck={false} /></label>
       <label>API key<input aria-label="API key" type="password" autoComplete="off" value={key} onChange={e => { setKey(e.target.value); setDirty(true); }} placeholder={current.hasKey && draft.baseURL === current.baseURL && draft.provider === current.provider ? tx('已安全保存，留空保留', 'Saved securely; leave blank to keep') : local ? tx('本机服务通常可以留空', 'Usually optional for local servers') : tx('填写你自己的 API key', 'Enter your API key')} /></label>
       <label className="assistant-check"><input type="checkbox" checked={clearKey} onChange={e => { setClearKey(e.target.checked); setDirty(true); }} />{tx('删除这个连接已保存的 key', 'Remove the saved key for this connection')}</label>
-    </>}
+    </details>}
     <label className="assistant-check"><input type="checkbox" checked={draft.actionsEnabled} onChange={e => update({ actionsEnabled: e.target.checked })} />{tx('允许打开网站、搜索网页和打开指定应用', 'Allow opening websites, web searches and supported apps')}</label>
-    <div className="assistant-buttons"><button className="button primary" disabled={busy} onClick={save}>{tx('保存助手设置', 'Save assistant settings')}</button>
+    <div className="assistant-buttons"><button className="button primary" disabled={busy || modelBusy} onClick={save}>{tx('保存助手设置', 'Save assistant settings')}</button>
       {current.enabled && <button className="button secondary" onClick={async () => { requestId.current++; setBusy(false); const result = await api.assistantConfigure({ ...current, enabled: false }); if (result.ok) { setDraft(result.data); setDirty(false); } else setNotice(result.error); }}>{tx('立即关闭助手', 'Turn off now')}</button>}
       <button className="button secondary" disabled={dirty || busy || !current.enabled || !current.provider} onClick={async () => { const result = await call(() => api.assistantProbe()); if (result) setNotice(result); }}>{tx('测试模型连接', 'Test model connection')}</button>
     </div>

@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {newer,selectRelease,checksumFrom,verifiedDownload,UpdateService} from '../electron/updater.mjs';
+import {newer,selectRelease,checksumFrom,verifiedDownload,stageWindowsUpdate,UpdateService} from '../electron/updater.mjs';
 const run=promisify(execFile);
 const asset=(name,size=120000)=>({name,size,browser_download_url:`https://github.com/huangbinjie/pawprint/releases/download/v0.11.3/${name}`});
 const release={tag_name:'v0.11.3',draft:false,prerelease:false,body:'Updates',assets:[asset('Pawprint-0.11.3-mac-arm64.zip'),asset('Pawprint-0.11.3-mac-arm64.zip.sha256',80)]};
@@ -54,17 +54,25 @@ test('installer swaps only after old process exits and restores on failure',{ski
  await assert.rejects(()=>run('/bin/sh',[script,current,path.join(dir,'missing.app'),staging,'99999999'],{env:{...process.env,PAWPRINT_TEST_INSTALL_NO_OPEN:'1'}}));
  assert.equal((await stat(path.join(current,'next'))).isFile(),true);
 });
-test('Windows selects only Windows x64 assets and opens the release page without quitting', async()=>{
- const windows={...release,assets:[...release.assets,asset('Pawprint-0.11.3-win-x64-setup.exe'),asset('Pawprint-0.11.3-win-x64-setup.exe.sha256',80)]};
+test('Windows downloads and verifies its installer before launch and quit', async()=>{
+ const bytes=Buffer.alloc(120000,7),name='Pawprint-0.11.3-win-x64-setup.exe',hash=createHash('sha256').update(bytes).digest('hex');
+ const windows={...release,assets:[asset(name),asset(name+'.sha256',80)]};
  const chosen=selectRelease(windows,'0.11.2','win32','x64');
- assert.ok(chosen.zip.endsWith('-win-x64-setup.exe'));
+ assert.equal(chosen.manual,false);
  assert.equal(selectRelease(release,'0.11.2','win32','x64'),null);
  assert.equal(selectRelease(windows,'0.11.2','win32','arm64'),null);
- let opened;
- const updates=new UpdateService({installed:'0.11.2',platform:'win32',arch:'x64',fetcher:async()=>new Response(JSON.stringify(windows)),openExternal:async url=>{opened=url},install:()=>assert.fail('Mac installer called'),quit:()=>assert.fail('App quit')});
- assert.equal((await updates.check()).release.manual,true);
- assert.equal((await updates.installLatest()).status,'available');
- assert.equal(opened,'https://github.com/huangbinjie/pawprint/releases/tag/v0.11.3');
+ const calls=[];
+ const updates=new UpdateService({installed:'0.11.2',platform:'win32',arch:'x64',appPath:'C:/Pawprint/Pawprint.exe',
+  fetcher:async url=> url.endsWith('/latest')?new Response(JSON.stringify(windows)):new Response(url.endsWith('.sha256')?`${hash}  ${name}\n`:bytes),
+  install:async(current,ready,root,pid,sha)=>{assert.equal(sha,hash);assert.equal(path.basename(ready),name);assert.deepEqual(await readFile(ready),bytes);calls.push('install');},
+  openExternal:()=>assert.fail('Opened browser'),quit:()=>calls.push('quit')});
+ await updates.check();assert.equal((await updates.installLatest()).status,'installing');assert.deepEqual(calls,['install','quit']);
+});
+test('Windows checksum mismatch prevents launch and keeps the current app open',async()=>{
+ const name='Pawprint-0.11.3-win-x64-setup.exe';
+ const windows={...release,assets:[asset(name),asset(name+'.sha256',80)]};
+ const updates=new UpdateService({installed:'0.11.2',platform:'win32',arch:'x64',fetcher:async url=>url.endsWith('/latest')?new Response(JSON.stringify(windows)):new Response(url.endsWith('.sha256')?`${'a'.repeat(64)}  ${name}\n`:Buffer.alloc(120000)),install:()=>assert.fail('Bad installer launched'),quit:()=>assert.fail('App quit')});
+ await updates.check();assert.equal((await updates.installLatest()).status,'error');assert.match(updates.snapshot().error,/校验失败/);
 });
 test('missing platform assets do not claim the app is current',async()=>{
  const updates=new UpdateService({installed:'0.11.2',platform:'win32',arch:'x64',fetcher:async()=>new Response(JSON.stringify(release))});

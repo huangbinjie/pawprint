@@ -1,3 +1,4 @@
+import { OllamaModels } from './assistant/ollama.mjs';
 import { ASSISTANT_LINKS } from '../core/assistant.mjs';
 import { AssistantService } from "./assistant/service.mjs";
 import { ActivityBubble } from "./activity-bubble.mjs";
@@ -63,7 +64,8 @@ const activityBubble = new ActivityBubble();
 let dragOrigin = null;
 let lan,
   performance = null;
-let activity, lastActivityEvent, quota, assistant;
+let activity, lastActivityEvent, quota, assistant, localModels;
+let updateNoticeVersion;
 const assistantBubble = new ActivityBubble();
 let assistantBubbleTimer;
 let trayImage, trayWatch, trayRecoveries = 0, trayLastReason = "startup";
@@ -94,6 +96,7 @@ function snapshot() {
     platform: process.platform,
     appVersion: app.getVersion(),
     assistant: assistant?.snapshot(),
+    localModels: localModels?.snapshot(),
     availableCoins: availableCoins(store.state),
     heldCoins: heldCoins(store.state),
     performance,
@@ -239,6 +242,7 @@ function menuTemplate() {
       label: `宠物币 ${store.state.balance} · 可领取 ${availableReward(store.state, Date.now())}`,
       enabled: false,
     },
+    ...(updates?.snapshot().status === 'available' ? [{ label: `更新到 v${updates.snapshot().release.version}`, click: () => createHome('settings') }] : []),
     { label: '宠物助手设置', click: () => createHome('settings') },
     { type: "separator" },
     ...(store.state.settings.quotaEnabled ? [
@@ -786,8 +790,16 @@ else {
       updates = new UpdateService({
         installed: app.getVersion(),
         openExternal: url => shell.openExternal(url),
-        appPath: path.dirname(path.dirname(path.dirname(app.getPath("exe")))),
-        onChange: () => { if (home && !home.isDestroyed()) home.webContents.send("paw:changed", snapshot()); },
+        appPath: process.platform === "darwin" ? path.dirname(path.dirname(path.dirname(app.getPath("exe")))) : app.getPath("exe"),
+        onChange: value => {
+          if (home && !home.isDestroyed()) home.webContents.send("paw:changed", snapshot());
+          updateTray();
+          if (app.isPackaged && !test && value.status === 'available' && updateNoticeVersion !== value.release?.version && Notification.isSupported()) {
+            updateNoticeVersion = value.release.version;
+            const notice = new Notification({ title: `Pawprint v${value.release.version}`, body: tr('发现新版本，点击在应用内更新。') });
+            notice.on('click', () => createHome('settings')); notice.show();
+          }
+        },
         quit: () => app.quit(),
       });
       if (store.state.usage.readerVersion !== "native-v1") {
@@ -803,6 +815,19 @@ else {
         getPet: () => housePets(store.state).find(p => p.id === store.state.activePetId) || housePets(store.state)[0],
         getLanguage: language, executeAction: executeAssistantAction, onChange: () => { if (!quitting) broadcast(); } });
       await assistant.init();
+      localModels = new OllamaModels({
+        ...(test && process.env.PAWPRINT_TEST_OLLAMA_URL ? { baseURL: process.env.PAWPRINT_TEST_OLLAMA_URL } : {}),
+        onChange: () => { if (!quitting) broadcast(); }, getGeneration: () => assistant.generation,
+        onUse: async (model, generation) => {
+          if (generation !== assistant.generation) return false;
+          await assistant.configure({ ...assistant.config, enabled: true, provider: 'ollama', baseURL: localModels.baseURL + '/v1', model });
+          return true;
+        },
+      });
+      register('paw:assistant-models-refresh', () => localModels.refresh());
+      register('paw:assistant-model-download', async model => ({ models: await localModels.download(model), assistant: assistant.snapshot() }));
+      register('paw:assistant-model-use', async model => ({ models: await localModels.use(model), assistant: assistant.snapshot() }));
+      register('paw:assistant-model-cancel', () => { localModels.cancel(); return localModels.snapshot(); });
       register('paw:assistant-configure', input => assistant.configure(input));
       register('paw:assistant-profile', (id, value) => assistant.profile(id, value));
       register('paw:assistant-probe', () => assistant.probe());
@@ -1137,6 +1162,7 @@ else {
     if (process.platform !== "darwin" && !tray) app.quit();
   });
   app.on("before-quit", (event) => {
+    localModels?.cancel();
     activityBubble.close();
     assistantBubble.close();
     clearTimeout(assistantBubbleTimer);

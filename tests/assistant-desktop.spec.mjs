@@ -24,8 +24,8 @@ test('assistant is opt-in; provider setup, per-pet character, tool execution and
     expect(await home.evaluate(() => Object.keys(window.pawprint).filter(k => /assistant(Voice|Audio|Listen|Prepare)/.test(k)))).toEqual([]);
     await app.evaluate(({ shell }) => { shell.openExternal = async url => { globalThis.assistantOpenedURL = url; }; });
     await panel.getByRole('button', { name: 'Ollama', exact: true }).click();
-    await expect(panel.locator('code')).toHaveText('ollama pull qwen3:8b');
-    await panel.getByRole('button', { name: '下载 Ollama（官网）', exact: true }).click();
+    await expect(panel.locator('.model-card')).toHaveCount(3);
+    await panel.getByRole('button', { name: '安装 Ollama（官方）', exact: true }).click();
     await expect.poll(() => app.evaluate(() => globalThis.assistantOpenedURL)).toBe('https://ollama.com/download');
 
     await panel.getByLabel('开启宠物助手').check();
@@ -67,4 +67,37 @@ test('assistant is opt-in; provider setup, per-pet character, tool execution and
     await home.getByLabel('界面语言').selectOption('en');
     await expect(restored.getByLabel('Enable pet assistant')).not.toBeChecked();
   } finally { await app?.close(); await new Promise(resolve => server.close(resolve)); }
+});
+
+test('a catalog download streams progress, tests the model and configures chat without manual fields', async ({}, info) => {
+  const profile = await mkdtemp(path.join(os.tmpdir(), 'paw-model-catalog-')); await seedMatureCompanion(profile);
+  let downloaded = false, pulls = 0;
+  const server = http.createServer((req, res) => {
+    let body = ''; req.on('data', c => body += c); req.on('end', () => {
+      res.setHeader('Content-Type', 'application/json');
+      if (req.url === '/api/tags') return res.end(JSON.stringify({ models: downloaded ? [{ name: 'qwen3:8b', size: 100 }] : [] }));
+      if (req.url === '/api/pull') { pulls++; res.write('{"status":"pulling","total":100,"completed":50}\n'); setTimeout(() => { downloaded = true; res.end('{"status":"success"}\n'); }, 1000); return; }
+      if (req.url === '/api/generate') return res.end('{"response":"OK"}');
+      if (req.url === '/v1/chat/completions') return res.end(JSON.stringify({ choices: [{ message: { content: '模型连接成功。' } }] }));
+      res.writeHead(404); res.end();
+    });
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const app = await electron.launch({ args: ['.'], env: { ...process.env, PAWPRINT_TEST_MODE: '1', PAWPRINT_TEST_DATA: profile, PAWPRINT_TEST_LAN: '1', PAWPRINT_TEST_CODEX_HOME: path.join(profile, 'codex'), PAWPRINT_TEST_OLLAMA_URL: base } });
+  try {
+    const home = await openHome(app, 'settings'), panel = home.getByTestId('assistant-settings');
+    await panel.getByRole('button', { name: 'Ollama', exact: true }).click();
+    const card = panel.locator('.model-card').filter({ hasText: 'Qwen3 8B' });
+    await card.getByRole('button', { name: '下载并使用', exact: true }).click();
+    await expect(panel.getByRole('progressbar', { name: '模型下载进度' })).toBeVisible();
+    await expect(panel.getByText('模型已就绪，已自动保存连接，可以聊天了。')).toBeVisible();
+    const state = (await home.evaluate(() => window.pawprint.getState())).data;
+    expect(state.assistant.enabled).toBe(true); expect(state.assistant.model).toBe('qwen3:8b'); expect(state.assistant.baseURL).toBe(base + '/v1');
+    await panel.getByLabel('输入指令').fill('你好'); await panel.getByRole('button', { name: '发送指令', exact: true }).click();
+    await expect(panel.locator('.assistant-reply')).toHaveText('模型连接成功。');
+    await card.getByRole('button', { name: '使用这个模型', exact: true }).click();
+    await expect(panel.getByText('模型已就绪，已自动保存连接，可以聊天了。')).toBeVisible(); expect(pulls).toBe(1);
+    await panel.getByTestId('local-models').screenshot({ path: info.outputPath('model-catalog.png') });
+  } finally { await app.close(); await new Promise(r => server.close(r)); }
 });

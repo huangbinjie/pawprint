@@ -1,6 +1,6 @@
 {
   "name": "pawprint-desktop",
-  "version": "0.11.9",
+  "version": "0.11.10",
   "private": true,
   "repository": "https://github.com/huangbinjie/pawprint",
   "homepage": "https://huangbinjie.github.io/pawprint/",
@@ -74,7 +74,13 @@
         }
       ],
       "icon": "build/icon.png",
-      "artifactName": "Pawprint-${version}-win-${arch}-setup.${ext}"
+      "artifactName": "Pawprint-${version}-win-${arch}-setup.${ext}",
+      "extraResources": [
+        {
+          "from": "electron/install-update.ps1",
+          "to": "updater/install-update.ps1"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

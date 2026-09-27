@@ -41,4 +41,4 @@ See the [changelog](CHANGELOG.md) for release history and [product notes](docs/P
 
 ### Pet assistant (experimental)
 
-Opt in from Preferences and connect your own Ollama / LM Studio server, or a MiMo, DeepSeek, OpenAI or compatible API key. Each pet has its own personality, text chat and optional website/app actions. End conversations anytime. Model downloads are managed separately; no inference runtime or voice listening is bundled. See the [setup guide and limitations](docs/ASSISTANT.md).
+Opt in from Preferences and connect your own Ollama / LM Studio server, or a MiMo, DeepSeek, OpenAI or compatible API key. Each pet has its own personality, text chat and optional website/app actions. End conversations anytime. The Ollama catalog downloads, tests and connects models in one flow; no inference runtime or voice listening is bundled. See the [setup guide and limitations](docs/ASSISTANT.md).

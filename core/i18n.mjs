@@ -2,6 +2,9 @@ import english from "./i18n-en.mjs";
 export const LANGUAGES = ["zh", "en"];
 export const normalizeMessage = text => text.replace(/\s+/g, " ").trim().replace(/([\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "$1");
 const extras = {
+  '自动下载 Windows 安装包并校验，保存后退出安装并自动重启；宠物与设置会保留。': 'Downloads and verifies the Windows installer, saves your data, then installs and restarts automatically. Pets and settings are preserved.',
+  '发现新版本，点击在应用内更新。': 'An update is available. Click to update inside the app.', '更新到 v{0}': 'Update to v{0}', '更新下载进度': 'Update download progress',
+
   '宠物助手设置': 'Pet assistant settings',
 
   "Windows 更新会打开官方发布页。下载 Windows x64 安装包，核对 SHA-256 后退出爪印并运行安装程序；存档会保留。": "Windows updates open the official release page. Download the Windows x64 installer, verify its SHA-256, then quit Pawprint and run the installer. Your save is preserved.",
