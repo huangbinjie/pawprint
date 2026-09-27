@@ -34,7 +34,7 @@ try {
   $ready = Join-Path $stage "Pawprint-$version-win-x64-setup.exe"
   Copy-Item "release/Pawprint-$version-win-x64-setup.exe" $ready
   $hash = (Get-FileHash $ready -Algorithm SHA256).Hash.ToLowerInvariant()
-  node tests/run-windows-installer.mjs $exe $ready $stage $oldApp.Id $hash (Join-Path $pwd 'electron/install-update.ps1')
+  node tests/run-windows-installer.mjs $exe $ready $stage $oldApp.Id $hash (Join-Path $pwd 'release/win-unpacked/resources/updater/install-update.ps1')
   if ($LASTEXITCODE -ne 0) {
     if (Test-Path ($stage + '.log')) { Get-Content -LiteralPath ($stage + '.log') }
     if (Test-Path (Join-Path $stage 'install.log')) { Get-Content -LiteralPath (Join-Path $stage 'install.log') }

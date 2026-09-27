@@ -120,12 +120,13 @@ export async function launchWindowsInstaller(currentApp,ready,root,pid,sha256,{s
   try {
     // UTF-16 command encoding avoids Windows command-line quoting of the script.
     const executable=path.join(process.env.SystemRoot || 'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
-    const child=await detached(executable,['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{detached:false,windowsHide:true,stdio:['ignore',log,log],env:{...process.env,
-      PAWPRINT_UPDATE_INSTALLER:ready,PAWPRINT_UPDATE_CURRENT:currentApp,PAWPRINT_UPDATE_ROOT:root,PAWPRINT_UPDATE_PID:String(pid),PAWPRINT_UPDATE_SHA256:sha256}});
+    const bootstrap="Start-Process -FilePath $env:PAWPRINT_UPDATE_POWERSHELL -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand',$env:PAWPRINT_UPDATE_SCRIPT) -WindowStyle Hidden | Out-Null";
+    const child=await detached(executable,['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(bootstrap,'utf16le').toString('base64')],{detached:false,windowsHide:true,stdio:['ignore',log,log],env:{...process.env,
+      PAWPRINT_UPDATE_POWERSHELL:executable,PAWPRINT_UPDATE_SCRIPT:Buffer.from(script,'utf16le').toString('base64'),PAWPRINT_UPDATE_INSTALLER:ready,PAWPRINT_UPDATE_CURRENT:currentApp,PAWPRINT_UPDATE_ROOT:root,PAWPRINT_UPDATE_PID:String(pid),PAWPRINT_UPDATE_SHA256:sha256}});
     let started=false;
     for(let attempt=0;attempt<100;attempt++) {
       try { await access(path.join(root,'helper.ready'));started=true;break; } catch {}
-      if(child.exitCode!==null || child.signalCode!==null) throw new Error('Windows 更新辅助进程启动失败（'+child.exitCode+'/'+child.signalCode+'），请查看 '+root+'.log');
+      if((child.exitCode!==null && child.exitCode!==0) || child.signalCode!==null) throw new Error('Windows 更新辅助进程启动失败（'+child.exitCode+'/'+child.signalCode+'），请查看 '+root+'.log');
       await new Promise(resolve=>setTimeout(resolve,100));
     }
     if(!started) { child.kill();throw new Error('Windows 更新辅助进程未就绪，应用没有退出。'); }
