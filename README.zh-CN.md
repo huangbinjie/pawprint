@@ -37,6 +37,6 @@ npm run dev
 
 ## Windows
 
-运行 `npm run package:win` 生成 `release/Pawprint-<版本>-win-x64-setup.exe`。Windows CI 会执行单元测试、打包和已打包应用的启动/存档测试；仍需通过 CI 和 Windows 实机验收，现有公开版本可能只有 Mac 包。
+运行 `npm run package:win` 生成 `release/Pawprint-<版本>-win-x64-setup.exe`。Windows CI 会执行单元测试、打包和已打包应用的启动/存档测试；v0.11.8 已提供 Windows 安装包，Windows CI 的单元测试、启动和重启后偏好保存测试已通过；桌面交互与跨平台局域网行为仍需实机验收。
 
 Windows 通过托盘菜单和悬停提示显示额度，双击托盘图标打开小屋。更新按钮打开官方发布页，下载对应安装包并核对 SHA-256 后退出应用、运行安装程序，保留原存档。详见 [Windows 支持与验收](docs/WINDOWS.md)。

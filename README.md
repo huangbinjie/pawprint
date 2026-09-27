@@ -1,8 +1,10 @@
-# Pawprint
+<a id="pawprint"></a>
+
+# Pawprint — GPT desktop pet for Windows and Mac
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [Website](https://huangbinjie.github.io/pawprint/) · [Download](https://github.com/huangbinjie/pawprint/releases/latest)
 
-Pawprint is an independent Codex desktop pet for Apple silicon Macs and Windows x64. It turns local Codex activity and GPT-model token usage into a small companion that grows alongside your work. The app runs locally; nearby visits and breeding use your LAN.
+Pawprint is an independent GPT desktop pet for Windows x64 and Apple silicon Macs, powered by local Codex activity. It turns local Codex activity and GPT-model token usage into a small companion that grows alongside your work. The app runs locally; nearby visits and breeding use your LAN.
 
 ![Pawprint's cream tabby companion](site/pet.png)
 
@@ -20,7 +22,7 @@ Pawprint is an independent app and is not affiliated with OpenAI.
 
 Download the latest Mac archive from [Releases](https://github.com/huangbinjie/pawprint/releases/latest) and verify its SHA-256 file. The beta has a complete ad-hoc bundle signature but is not Apple Developer ID signed or notarized. On first launch, macOS may say it cannot verify the developer: choose Done, then System Settings → Privacy & Security → Open Anyway for Pawprint. If macOS says **damaged**, stop and report that build. See [Mac beta signing](docs/RELEASE_SIGNING.md).
 
-Windows builds use `Pawprint-<version>-win-x64-setup.exe` with an accompanying SHA-256 file. Windows support is pending a successful Windows CI run and hands-on desktop verification; existing releases may only contain the Mac archive. Windows updates open the official release page for manual installation.
+Windows builds use `Pawprint-<version>-win-x64-setup.exe` with an accompanying SHA-256 file. The v0.11.8 Windows installer is published. Windows CI passed the core tests and packaged-app startup and preference-persistence checks; interactive desktop and cross-platform LAN behavior still need hands-on verification. Windows updates open the official release page for manual installation.
 
 ## Develop
 
