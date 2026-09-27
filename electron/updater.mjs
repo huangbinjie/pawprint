@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { createWriteStream, createReadStream } from 'node:fs';
+import { createWriteStream, createReadStream, openSync, closeSync } from 'node:fs';
 import { mkdtemp, rm, stat, lstat, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -116,8 +116,13 @@ export async function launchWindowsInstaller(currentApp,ready,root,pid,sha256,{s
   const script=await readFile(scriptPath,'utf8');
   // Run our packaged helper as a command. No execution-policy changes, shell
   // interpolation of paths, or machine-wide security settings are needed.
-  return detached('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,env:{...process.env,
-    PAWPRINT_UPDATE_INSTALLER:ready,PAWPRINT_UPDATE_CURRENT:currentApp,PAWPRINT_UPDATE_ROOT:root,PAWPRINT_UPDATE_PID:String(pid),PAWPRINT_UPDATE_SHA256:sha256}});
+  const log=openSync(root+'.log','a');
+  try {
+    // UTF-16 command encoding avoids Windows command-line quoting of the script.
+    await detached('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,stdio:['ignore',log,log],env:{...process.env,
+      PAWPRINT_UPDATE_INSTALLER:ready,PAWPRINT_UPDATE_CURRENT:currentApp,PAWPRINT_UPDATE_ROOT:root,PAWPRINT_UPDATE_PID:String(pid),PAWPRINT_UPDATE_SHA256:sha256}});
+  } finally { closeSync(log); }
+
 }
 export class UpdateService {
   constructor({installed,appPath,onChange=()=>{},fetcher=fetch,install,stage,quit=()=>{},platform=process.platform,arch=process.arch,openExternal}){

@@ -46,6 +46,8 @@ try {
     $finished = !(Test-Path $stage)
   } until (($updated -and $restarted -and $finished) -or (Get-Date) -gt $deadline)
   if (!$updated -or !$restarted -or !$finished) {
+    if (Test-Path ($stage + '.log')) { Get-Content -LiteralPath ($stage + '.log') }
+    Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'Pawprint|setup|powershell|smartscreen' } | Select-Object Name, ProcessId, ParentProcessId, ExecutablePath | Format-Table -AutoSize
     if (Test-Path (Join-Path $stage 'install.log')) { Get-Content (Join-Path $stage 'install.log') }
     throw "Update failed: updated=$updated restarted=$restarted finished=$finished"
   }
