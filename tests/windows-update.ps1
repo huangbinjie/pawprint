@@ -34,7 +34,11 @@ try {
   Copy-Item "release/Pawprint-$version-win-x64-setup.exe" $ready
   $hash = (Get-FileHash $ready -Algorithm SHA256).Hash.ToLowerInvariant()
   node tests/run-windows-installer.mjs $exe $ready $stage $oldApp.Id $hash (Join-Path $pwd 'electron/install-update.ps1')
-  if ($LASTEXITCODE -ne 0) { throw 'Updater helper failed to start' }
+  if ($LASTEXITCODE -ne 0) {
+    if (Test-Path ($stage + '.log')) { Get-Content -LiteralPath ($stage + '.log') }
+    if (Test-Path (Join-Path $stage 'install.log')) { Get-Content -LiteralPath (Join-Path $stage 'install.log') }
+    throw 'Updater helper failed to start'
+  }
   Start-Sleep -Seconds 2
   if ((Get-Item $exe).VersionInfo.ProductVersion -notlike '0.11.9*') { throw 'Updater replaced a running app' }
   Stop-Process -Id $oldApp.Id -Force -ErrorAction SilentlyContinue
