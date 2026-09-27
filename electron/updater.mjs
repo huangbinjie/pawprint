@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createWriteStream, createReadStream, openSync, closeSync } from 'node:fs';
-import { mkdtemp, rm, stat, lstat, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, stat, lstat, readFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -105,7 +105,7 @@ export async function stageWindowsUpdate(release,_currentApp,{fetcher=fetch,work
 function detached(command,args,options={}) {
   return new Promise((resolve,reject)=>{
     const child=spawn(command,args,{detached:true,stdio:'ignore',...options});
-    child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});
+    child.once('error',reject);child.once('spawn',()=>{child.unref();resolve(child);});
   });
 }
 export function launchInstaller(currentApp,ready,root,pid) {
@@ -119,8 +119,17 @@ export async function launchWindowsInstaller(currentApp,ready,root,pid,sha256,{s
   const log=openSync(root+'.log','a');
   try {
     // UTF-16 command encoding avoids Windows command-line quoting of the script.
-    await detached('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,stdio:['ignore',log,log],env:{...process.env,
+    const executable=path.join(process.env.SystemRoot || 'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
+    const child=await detached(executable,['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,stdio:['ignore',log,log],env:{...process.env,
       PAWPRINT_UPDATE_INSTALLER:ready,PAWPRINT_UPDATE_CURRENT:currentApp,PAWPRINT_UPDATE_ROOT:root,PAWPRINT_UPDATE_PID:String(pid),PAWPRINT_UPDATE_SHA256:sha256}});
+    let started=false;
+    for(let attempt=0;attempt<100;attempt++) {
+      try { await access(path.join(root,'helper.ready'));started=true;break; } catch {}
+      if(child.exitCode!==null || child.signalCode!==null) throw new Error('Windows 更新辅助进程启动失败，请查看 '+root+'.log');
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    if(!started) { child.kill();throw new Error('Windows 更新辅助进程未就绪，应用没有退出。'); }
+
   } finally { closeSync(log); }
 
 }

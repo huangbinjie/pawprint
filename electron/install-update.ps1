@@ -6,6 +6,7 @@ $expected = $env:PAWPRINT_UPDATE_SHA256
 $parentId = [int]$env:PAWPRINT_UPDATE_PID
 $log = Join-Path $root 'install.log'
 try {
+  [IO.File]::WriteAllText((Join-Path $root 'helper.ready'), 'ready')
   Write-Output 'Pawprint update helper started'
   if (!(Test-Path -LiteralPath $installer -PathType Leaf) -or $expected -notmatch '^[a-f0-9]{64}$') { throw 'Invalid update package' }
   Write-Output 'Waiting for the old process to exit'
