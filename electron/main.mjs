@@ -1,3 +1,5 @@
+import { ASSISTANT_LINKS } from '../core/assistant.mjs';
+import { AssistantService } from "./assistant/service.mjs";
 import { ActivityBubble } from "./activity-bubble.mjs";
 import { UpdateService } from "./updater.mjs";
 import { LanService } from "./lan/service.mjs";
@@ -10,6 +12,7 @@ import { talentById } from "../core/talents.mjs";
 import { skillById, ownsSkill, petSkills, socialCast } from "../core/skills.mjs";
 import {
   app,
+  safeStorage,
   shell,
   BrowserWindow,
   ipcMain,
@@ -60,7 +63,9 @@ const activityBubble = new ActivityBubble();
 let dragOrigin = null;
 let lan,
   performance = null;
-let activity, lastActivityEvent, quota;
+let activity, lastActivityEvent, quota, assistant;
+const assistantBubble = new ActivityBubble();
+let assistantBubbleTimer;
 let trayImage, trayWatch, trayRecoveries = 0, trayLastReason = "startup";
 const TRAY_GUID = "22e5b352-a013-4f52-86fb-68ce83b3b386";
 const language = () => store?.state?.settings?.language === "en" ? "en" : "zh";
@@ -87,6 +92,8 @@ function snapshot() {
   return {
     ...structuredClone(store.state),
     platform: process.platform,
+    appVersion: app.getVersion(),
+    assistant: assistant?.snapshot(),
     availableCoins: availableCoins(store.state),
     heldCoins: heldCoins(store.state),
     performance,
@@ -130,9 +137,8 @@ function broadcast() {
 function secure(window) {
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
-  window.webContents.session.setPermissionRequestHandler(
-    (_webContents, _permission, callback) => callback(false),
-  );
+  window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  window.webContents.session.setPermissionCheckHandler(() => false);
 }
 function load(window, hash = "") {
   secure(window);
@@ -200,6 +206,22 @@ async function openClient() {
   }
   return true;
 }
+function showAssistantReply(result) {
+  if (result?.text && floating && !floating.isDestroyed() && floating.isVisible()) {
+    assistantBubble.update({ pet: floating.getBounds(), event: { at: Date.now(), text: result.text.slice(0, 65) }, subtitle: assistant.getPet()?.name });
+    clearTimeout(assistantBubbleTimer); assistantBubbleTimer = setTimeout(() => assistantBubble.hide(), 8000);
+  }
+  return result;
+}
+async function executeAssistantAction(action) {
+  if (action.url) return shell.openExternal(action.url);
+  if (action.app === 'browser') return shell.openExternal('https://www.google.com');
+  const macApps = { calculator: 'com.apple.calculator', notes: 'com.apple.Notes', calendar: 'com.apple.iCal', music: 'com.apple.Music' };
+  const winApps = { calculator: 'calc.exe', notes: 'notepad.exe' };
+  if (process.platform === 'darwin') await execute('/usr/bin/open', ['-b', macApps[action.app]], { timeout: 10000 });
+  else if (process.platform === 'win32' && winApps[action.app]) await execute(winApps[action.app], [], { timeout: 10000 });
+  else throw new Error('这个系统暂不支持打开该应用。');
+}
 function menuAction(action) {
   void Promise.resolve()
     .then(action)
@@ -217,6 +239,7 @@ function menuTemplate() {
       label: `宠物币 ${store.state.balance} · 可领取 ${availableReward(store.state, Date.now())}`,
       enabled: false,
     },
+    { label: '宠物助手设置', click: () => createHome('settings') },
     { type: "separator" },
     ...(store.state.settings.quotaEnabled ? [
       { label: q.values.weekly.detail, enabled: false },
@@ -719,7 +742,8 @@ function refresh() {
 function register(channel, handler) {
   ipcMain.handle(channel, async (event, ...args) => {
     const window = BrowserWindow.fromWebContents(event.sender);
-    if (!window || ![home, floating, ...guestWindows.values()].includes(window))
+    if (!window || ![home, floating, ...guestWindows.values()].includes(window) ||
+      (channel.startsWith("paw:assistant-") && ![home, floating].includes(window)))
       return { ok: false, error: "来源无效。" };
     try {
       if (quitting) throw new Error("应用正在保存并退出。");
@@ -775,6 +799,20 @@ else {
       }
       const upgraded = desktopUpgrade(store.state);
       if (upgraded !== store.state) await store.save(upgraded);
+      assistant = new AssistantService({ directory: app.getPath('userData'), safeStorage,
+        getPet: () => housePets(store.state).find(p => p.id === store.state.activePetId) || housePets(store.state)[0],
+        getLanguage: language, executeAction: executeAssistantAction, onChange: () => { if (!quitting) broadcast(); } });
+      await assistant.init();
+      register('paw:assistant-configure', input => assistant.configure(input));
+      register('paw:assistant-profile', (id, value) => assistant.profile(id, value));
+      register('paw:assistant-probe', () => assistant.probe());
+      register('paw:assistant-run', async text => showAssistantReply(await assistant.run(text)));
+      register('paw:assistant-cancel', () => { assistant.cancel(); return assistant.snapshot(); });
+      register('paw:assistant-end', () => { assistantBubble.hide(); return assistant.endConversation(); });
+      register('paw:assistant-help', id => {
+        if (!Object.hasOwn(ASSISTANT_LINKS, id)) throw new Error('未知的模型指引。');
+        return shell.openExternal(ASSISTANT_LINKS[id]);
+      });
       register("paw:state", () => snapshot());
       register("paw:update-check", () => updates.check());
       register("paw:update-install", () => {
@@ -789,6 +827,7 @@ else {
           !allowed.has(command.type)
         )
           throw new Error("操作无效。");
+        if (['select', 'garden', 'return-home', 'rename'].includes(command.type)) assistant?.cancel();
         const result = await enqueue(() => mutate(command));
         if (command.type === "connect") void refresh();
         return result;
@@ -1043,6 +1082,7 @@ else {
       syncFloating();
       tickIdle();
       const pauseVisuals = () => {
+        assistant?.cancel();
         activityBubble.hide();
         floating?.hide();
         for (const guest of guestWindows.values()) guest.hide();
@@ -1098,6 +1138,8 @@ else {
   });
   app.on("before-quit", (event) => {
     activityBubble.close();
+    assistantBubble.close();
+    clearTimeout(assistantBubbleTimer);
     clearInterval(interval);
     clearInterval(trayWatch);
     clearTimeout(idleTimer);
@@ -1106,7 +1148,7 @@ else {
       event.preventDefault();
       void rememberPosition();
       quitting = true;
-      void Promise.all([queue, lan?.close(), activity?.close(), quota?.close()]).finally(() => app.quit());
+      void Promise.all([queue, assistant?.close(), lan?.close(), activity?.close(), quota?.close()]).finally(() => app.quit());
     }
   });
 }

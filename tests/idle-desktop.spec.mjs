@@ -121,3 +121,18 @@ test("idle ball, real window roaming, hover stop, edge patrol and reduced motion
     throw error;
   } finally { await app.close(); }
 });
+
+test('focused floating pet has no clipped rectangular ring', async ({}, info) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'paw-focus-ui-'));
+  await seedMatureCompanion(dir);
+  const app = await electron.launch({ args: ['.'], env: { ...process.env, PAWPRINT_TEST_MODE: '1', PAWPRINT_TEST_DATA: dir, PAWPRINT_TEST_LAN: '1', PAWPRINT_TEST_CODEX_HOME: path.join(dir, 'codex') } });
+  try {
+    const floating = await app.firstWindow();
+    const button = floating.locator('.float-cat-button');
+    await button.focus();
+    expect(await button.evaluate(el => getComputedStyle(el).outlineStyle)).toBe('none');
+    await button.click();
+    expect(await button.evaluate(el => getComputedStyle(el).outlineStyle)).toBe('none');
+    await floating.screenshot({ path: info.outputPath('focused-pet-no-bars.png'), omitBackground: true });
+  } finally { await app.close(); }
+});

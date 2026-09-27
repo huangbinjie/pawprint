@@ -2,6 +2,14 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.11.9
+
+- Add an opt-in text pet assistant with Ollama, LM Studio, MiMo, DeepSeek, OpenAI and compatible APIs.
+- Keep each pet's personality separate; allow explicit website/app actions and end conversations by cancelling requests and clearing context.
+- Provide official external model download links and setup guidance, with no bundled inference runtime or microphone listening.
+- Enable idle walking and occasional ball play by default while preserving explicit opt-outs.
+- Remove clipped focus bars around the floating pet, tighten speech bubbles and restyle update buttons.
+
 ## 0.11.8
 
 - Add a Windows x64 NSIS installer, native window controls and a color tray icon.

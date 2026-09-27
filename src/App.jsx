@@ -41,6 +41,7 @@ import Cat from "./components/Cat.jsx";
 import Egg from "./components/Egg.jsx";
 import TalentRoom from "./components/TalentRoom.jsx";
 import PetSizeControl from "./components/PetSizeControl.jsx";
+import AssistantSettings from "./components/AssistantSettings.jsx";
 import QuotaSettings from "./components/QuotaSettings.jsx";
 import SocialScene from "./components/SocialScene.jsx";
 import SkillOdds from "./components/SkillOdds.jsx";
@@ -556,7 +557,7 @@ export default function App() {
           </button>
           <div className="version">
             <i />
-            本地养成版 <span>v0.11.7</span>
+            本地养成版 <span>v{state.appVersion || "0.11.9"}</span>
           </div>
         </div>
       </aside>
@@ -1503,16 +1504,17 @@ export default function App() {
                       state.update?.status === "error" ? (state.settings.language === "en" ? `Update failed: ${t(state.update.error)}` : `更新失败：${state.update.error}`) : "从 GitHub Release 检查新版本"}</strong>
                     <p>{state.platform === "win32" ? "Windows 更新会打开官方发布页。下载 Windows x64 安装包，核对 SHA-256 后退出爪印并运行安装程序；存档会保留。" : "仅下载 Pawprint 官方仓库的 Apple 芯片 Mac 包；校验 SHA-256、应用标识和版本后安装。安装时会重启应用。"}</p>
                   </div>
-                  <button className="secondary-button" disabled={["checking","downloading","installing"].includes(state.update?.status)} onClick={async () => {
+                  <button className="button secondary small" disabled={["checking","downloading","installing"].includes(state.update?.status)} onClick={async () => {
                     const r = await api.checkUpdates();
                     if (!r.ok) setToast({text:r.error,error:true});
-                  }}>检查更新</button>
+                  }}><RefreshCw size={14} />检查更新</button>
                 </div>
-                {state.update?.status === "available" && <button className="primary-button" onClick={async () => {
+                {state.update?.status === "available" && <button className="button primary" onClick={async () => {
                   const r = await api.installUpdate();
                   if (!r.ok) setToast({text:r.error,error:true});
                 }}>{state.update.release.manual ? (state.settings.language === "en" ? `Open download page for v${state.update.release.version}` : `打开 v${state.update.release.version} 下载页`) : (state.settings.language === "en" ? `Download and install v${state.update.release.version}` : `下载并安装 v${state.update.release.version}`)}</button>}
               </section>
+              <AssistantSettings state={state} />
               <QuotaSettings state={state} now={tick} working={working} onCommand={command} onRecover={async () => {
                 const r = await api.recoverTray();
                 if (r.ok) setState(r.data); else setToast({ text: r.error, error: true });

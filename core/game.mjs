@@ -39,7 +39,7 @@ export function initialState(now) {
     eggs: [],
     ledger: [],
     activePetId: null,
-    settings: { connected: false, floating: true, desktopShellVersion: 1 },
+    settings: { connected: false, floating: true, desktopShellVersion: 1, idleEnabled: true, idleToys: true },
     usage: { days: {}, report: null, lastError: null },
   };
 }

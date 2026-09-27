@@ -3,11 +3,15 @@ export const petScale = settings => Number.isFinite(settings?.petScale) ? Math.m
 export const scaledFloatSize = (scale = 1, width = FLOAT_SIZE.width) => ({ width: Math.round(width * scale), height: Math.round(FLOAT_SIZE.height * scale) });
 
 export function desktopUpgrade(state) {
-  if (state.settings.desktopShellVersion === 1) return state;
-  return {
-    ...state,
-    settings: { ...state.settings, floating: true, desktopShellVersion: 1 },
+  const old = state.settings;
+  const settings = {
+    ...old,
+    ...(old.desktopShellVersion !== 1 ? { floating: true, desktopShellVersion: 1 } : {}),
+    idleEnabled: typeof old.idleEnabled === 'boolean' ? old.idleEnabled : true,
+    idleToys: typeof old.idleToys === 'boolean' ? old.idleToys : true,
   };
+  if (Object.keys(settings).every(key => settings[key] === old[key])) return state;
+  return { ...state, settings };
 }
 
 export function floatPosition(saved, area, size = FLOAT_SIZE) {

@@ -2,6 +2,8 @@ import english from "./i18n-en.mjs";
 export const LANGUAGES = ["zh", "en"];
 export const normalizeMessage = text => text.replace(/\s+/g, " ").trim().replace(/([\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "$1");
 const extras = {
+  '宠物助手设置': 'Pet assistant settings',
+
   "Windows 更新会打开官方发布页。下载 Windows x64 安装包，核对 SHA-256 后退出爪印并运行安装程序；存档会保留。": "Windows updates open the official release page. Download the Windows x64 installer, verify its SHA-256, then quit Pawprint and run the installer. Your save is preserved.",
   "在 Windows 任务栏的隐藏图标中查找 Pawprint。额度显示在托盘菜单和悬停提示中，双击图标打开小屋。": "Look for Pawprint in the Windows taskbar hidden icons. Quota appears in the tray menu and tooltip. Double-click the icon to open your home.",
   "托盘菜单显示剩余额度": "Show remaining quota in the tray menu",

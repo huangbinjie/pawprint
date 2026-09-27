@@ -38,3 +38,7 @@ Run `npm test` for core checks and `npm run package:local` for an ad-hoc signed 
 Pet data stays in the local app profile. There is no account, cloud sync, cash top-up, or online trading.
 
 See the [changelog](CHANGELOG.md) for release history and [product notes](docs/PRODUCT.md) for detailed behavior.
+
+### Pet assistant (experimental)
+
+Opt in from Preferences and connect your own Ollama / LM Studio server, or a MiMo, DeepSeek, OpenAI or compatible API key. Each pet has its own personality, text chat and optional website/app actions. End conversations anytime. Model downloads are managed separately; no inference runtime or voice listening is bundled. See the [setup guide and limitations](docs/ASSISTANT.md).

@@ -17,3 +17,10 @@
 .gentle-cat.skill-chase .cat-body {animation-name:gentle-chase}
 @keyframes gentle-chase {0%{transform:rotate(0)}70%,100%{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.gentle-cat .cat-eye,.gentle-cat .cat-tail,.gentle-cat .gentle-ear,.gentle-cat .cat-body{animation:none!important}}
+/* The transparent pet window clips a rectangular focus ring into two bars.
+   Keep keyboard focus visible on the pet silhouette, not the window edges. */
+.floating-pet .float-cat-button:focus { outline: none; }
+.floating-pet .float-cat-button:focus-visible .cat,
+.floating-pet .float-cat-button:focus-visible .egg { filter: drop-shadow(0 0 3px #8da783); }
+
+.pet-bubble { padding: 5px 9px; }

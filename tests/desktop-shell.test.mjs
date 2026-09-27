@@ -50,3 +50,16 @@ test("bubble placement stays outside the pet hit box where the screen has room",
   const nearTop = bubblePosition({ x: 600, y: 25, width: 110, height: 121 }, area, size);
   assert.ok(nearTop.x >= 710 || nearTop.x + size.width <= 600 || nearTop.y >= 146);
 });
+
+test('new homes roam and play by default; old explicit opt-outs survive migration', () => {
+  const fresh = initialState(1000);
+  assert.equal(fresh.settings.idleEnabled, true);
+  assert.equal(fresh.settings.idleToys, true);
+  const legacy = { ...fresh, settings: { connected: true, floating: false, desktopShellVersion: 1 } };
+  const upgraded = desktopUpgrade(legacy);
+  assert.equal(upgraded.settings.idleEnabled, true);
+  assert.equal(upgraded.settings.idleToys, true);
+  assert.equal(upgraded.settings.floating, false);
+  const optedOut = { ...legacy, settings: { ...legacy.settings, idleEnabled: false, idleToys: false } };
+  assert.equal(desktopUpgrade(optedOut), optedOut);
+});
