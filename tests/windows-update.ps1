@@ -1,3 +1,4 @@
+if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows') { throw 'This installer integration test runs only on the isolated Windows CI runner.' }
 $ErrorActionPreference = 'Stop'
 $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
 $workspace = Join-Path $env:RUNNER_TEMP ('pawprint-upgrade-test-' + [guid]::NewGuid())
