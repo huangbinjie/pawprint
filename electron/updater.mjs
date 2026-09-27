@@ -128,7 +128,7 @@ export class UpdateService {
   snapshot(){return {...this.state,release:this.state.release && {manual:this.state.release.manual,version:this.state.release.version,tag:this.state.release.tag,notes:this.state.release.notes,size:this.state.release.size}}}
   set(patch){this.state={...this.state,...patch};this.onChange(this.snapshot());return this.snapshot()}
   async check(){
-    if(this.state.status==='downloading'||this.state.status==='installing') return this.snapshot();
+    if(['checking','downloading','installing'].includes(this.state.status)) return this.snapshot();
     this.set({status:'checking',error:null});
     try{const raw=await this.fetcher(releaseUrl,{headers:{'User-Agent':'Pawprint-Updater','Accept':'application/vnd.github+json'},signal:AbortSignal.timeout(45_000)});
       if(raw.status===404) return this.set({status:'unreleased',release:null,error:null,checkedAt:Date.now()});

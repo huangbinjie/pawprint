@@ -23,10 +23,13 @@ try {
   if ((Get-Item $exe).VersionInfo.ProductVersion -notlike '0.11.9*') { throw 'Wrong baseline version' }
   $profile = Join-Path $env:APPDATA 'Pawprint'
   New-Item -ItemType Directory -Force $profile | Out-Null
+  node --input-type=module -e "import { seedMatureCompanion } from './tests/fixtures/game.mjs'; await seedMatureCompanion(process.argv[1]);" $profile
+  if ($LASTEXITCODE -ne 0) { throw 'Failed to seed test pet' }
   $marker = Join-Path $profile 'update-preservation-test.txt'
   [IO.File]::WriteAllText($marker, 'preserve-pawprint-user-data')
   $oldApp = Start-Process -FilePath $exe -PassThru
   Start-Sleep -Seconds 3
+  $before = Get-Content -Raw (Join-Path $profile 'save-v1.json') | ConvertFrom-Json
   $ready = Join-Path $stage "Pawprint-$version-win-x64-setup.exe"
   Copy-Item "release/Pawprint-$version-win-x64-setup.exe" $ready
   $hash = (Get-FileHash $ready -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -47,6 +50,10 @@ try {
     throw "Update failed: updated=$updated restarted=$restarted finished=$finished"
   }
   if ((Get-Content -Raw $marker) -ne 'preserve-pawprint-user-data') { throw 'User data was lost' }
+  $after = Get-Content -Raw (Join-Path $profile 'save-v1.json') | ConvertFrom-Json
+  foreach ($field in @('pets','eggs','balance','ledger','capacity','activePetId')) {
+    if (($before.$field | ConvertTo-Json -Depth 100 -Compress) -ne ($after.$field | ConvertTo-Json -Depth 100 -Compress)) { throw "Changed saved field: $field" }
+  }
   Write-Output "PASS: 0.11.9 -> $version; parent exit respected, custom path preserved, automatic restart and user data verified."
 } finally {
   Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $exe } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }

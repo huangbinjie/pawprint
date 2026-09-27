@@ -89,7 +89,7 @@ jobs:
           fi
           cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
 
-          Windows 10/11 x64: download the `Pawprint-*-win-x64-setup.exe` installer and its SHA-256 file below. This Windows beta is unsigned. Its packaged app is built and smoke-tested on Windows CI; interactive desktop and cross-platform LAN behavior still need hands-on verification. Windows updates are installed manually and preserve the save. Windows ARM64-native builds are not included.
+          Windows 10/11 x64: download the `Pawprint-*-win-x64-setup.exe` installer and its SHA-256 file below. This Windows beta is unsigned. Its packaged app is built and smoke-tested on Windows CI; interactive desktop and cross-platform LAN behavior still need hands-on verification. Version 0.11.10 and later support verified in-app updates and preserve the save. Version 0.11.9 and earlier need one manual installation to gain this feature. Windows ARM64-native builds are not included.
           NOTES
           gh release create "$GITHUB_REF_NAME" artifacts/* --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft
 

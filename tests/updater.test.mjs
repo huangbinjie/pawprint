@@ -78,3 +78,11 @@ test('missing platform assets do not claim the app is current',async()=>{
  const updates=new UpdateService({installed:'0.11.2',platform:'win32',arch:'x64',fetcher:async()=>new Response(JSON.stringify(release))});
  assert.equal((await updates.check()).status,'unreleased');
 });
+test('automatic and manual update checks share an in-flight check instead of overwriting download state', async()=>{
+ let resolve, requests=0;
+ const responsePromise=new Promise(r=>resolve=r);
+ const updates=new UpdateService({installed:'0.11.2',platform:'darwin',arch:'arm64',fetcher:()=>{requests++;return responsePromise;}});
+ const pending=updates.check();
+ assert.equal((await updates.check()).status,'checking');assert.equal(requests,1);
+ resolve(new Response(JSON.stringify(release)));assert.equal((await pending).status,'available');
+});
