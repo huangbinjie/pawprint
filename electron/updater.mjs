@@ -13,7 +13,11 @@ const run = promisify(execFile);
 export const RELEASE_REPO = 'huangbinjie/pawprint';
 const releaseUrl = `https://api.github.com/repos/${RELEASE_REPO}/releases/latest`;
 const zipName = version => `Pawprint-${version}-mac-arm64.zip`;
-const hashName = version => `${zipName(version)}.sha256`;
+export function releaseAssetName(version, platform, arch) {
+  if (platform === "darwin" && arch === "arm64") return zipName(version);
+  if (platform === "win32" && arch === "x64") return `Pawprint-${version}-win-x64-setup.exe`;
+  return null;
+}
 const parse = value => { const m=/^v?(\d+)\.(\d+)\.(\d+)$/.exec(value || ''); return m ? m.slice(1).map(Number) : null; };
 export function newer(candidate, installed) {
   const a=parse(candidate),b=parse(installed);
@@ -21,17 +25,20 @@ export function newer(candidate, installed) {
   for(let i=0;i<3;i++) if(a[i]!==b[i]) return a[i]>b[i];
   return false;
 }
-export function selectRelease(release, installed) {
+export function selectRelease(release, installed, platform = "darwin", arch = "arm64") {
   if (!release || release.draft || release.prerelease || !newer(release.tag_name,installed)) return null;
   const version=release.tag_name.replace(/^v/,'');
-  const zip=release.assets?.find(a=>a.name===zipName(version));
-  const checksum=release.assets?.find(a=>a.name===hashName(version));
+  const filename=releaseAssetName(version,platform,arch);
+  if (!filename) return null;
+  const zip=release.assets?.find(a=>a.name===filename);
+  const checksum=release.assets?.find(a=>a.name===`${filename}.sha256`);
   if(!zip || !checksum || zip.size<100_000 || zip.size>800_000_000) return null;
   for(const asset of [zip,checksum]) {
-    const u=new URL(asset.browser_download_url);
+    let u;
+    try { u=new URL(asset.browser_download_url); } catch { return null; }
     if(u.protocol!=='https:' || u.hostname!=='github.com' || !u.pathname.startsWith(`/${RELEASE_REPO}/releases/download/`)) return null;
   }
-  return {version,tag:release.tag_name,notes:release.body?.slice(0,3000)||'',zip:zip.browser_download_url,checksum:checksum.browser_download_url,size:zip.size};
+  return {version,tag:release.tag_name,manual:platform === "win32",page:`https://github.com/${RELEASE_REPO}/releases/tag/${encodeURIComponent(release.tag_name)}`,notes:release.body?.slice(0,3000)||'',zip:zip.browser_download_url,checksum:checksum.browser_download_url,size:zip.size};
 }
 async function response(url, fetcher, timeoutMs=45_000) {
   const r=await fetcher(url,{headers:{'User-Agent':'Pawprint-Updater','Accept':'application/vnd.github+json'},signal:AbortSignal.timeout(timeoutMs)});
@@ -85,11 +92,12 @@ export function launchInstaller(currentApp,ready,root,pid) {
   child.unref();
 }
 export class UpdateService {
-  constructor({installed,appPath,onChange=()=>{},fetcher=fetch,install=launchInstaller,quit=()=>{}}){
+  constructor({installed,appPath,onChange=()=>{},fetcher=fetch,install=launchInstaller,quit=()=>{},platform=process.platform,arch=process.arch,openExternal}){
+    this.platform=platform;this.arch=arch;this.openExternal=openExternal;
     this.installed=installed;this.appPath=appPath;this.onChange=onChange;this.fetcher=fetcher;this.install=install;this.quit=quit;
     this.state={status:'idle',release:null,error:null,checkedAt:null};
   }
-  snapshot(){return {...this.state,release:this.state.release && {version:this.state.release.version,tag:this.state.release.tag,notes:this.state.release.notes,size:this.state.release.size}}}
+  snapshot(){return {...this.state,release:this.state.release && {manual:this.state.release.manual,version:this.state.release.version,tag:this.state.release.tag,notes:this.state.release.notes,size:this.state.release.size}}}
   set(patch){this.state={...this.state,...patch};this.onChange(this.snapshot());return this.snapshot()}
   async check(){
     if(this.state.status==='downloading'||this.state.status==='installing') return this.snapshot();
@@ -97,13 +105,20 @@ export class UpdateService {
     try{const raw=await this.fetcher(releaseUrl,{headers:{'User-Agent':'Pawprint-Updater','Accept':'application/vnd.github+json'},signal:AbortSignal.timeout(45_000)});
       if(raw.status===404) return this.set({status:'unreleased',release:null,error:null,checkedAt:Date.now()});
       if(!raw.ok) throw new Error(`GitHub 返回 ${raw.status}`);
-      const release=selectRelease(await raw.json(),this.installed);
-      return this.set({status:release?'available':'current',release,error:null,checkedAt:Date.now()});
+      const rawRelease=await raw.json();
+      const release=selectRelease(rawRelease,this.installed,this.platform,this.arch);
+      return this.set({status:release?'available':newer(rawRelease.tag_name,this.installed)?'unreleased':'current',release,error:null,checkedAt:Date.now()});
     }catch(e){return this.set({status:'error',error:e.message,checkedAt:Date.now()})}
   }
   async installLatest(){
     const release=this.state.release;
     if(this.state.status!=='available'||!release) throw new Error('请先检查新版本。');
+    if (release.manual) {
+      try {
+        await this.openExternal(release.page);
+        return this.snapshot();
+      } catch (e) { return this.set({status:'error',error:e.message}); }
+    }
     this.set({status:'downloading',error:null});
     try{const staged=await stageUpdate(release,this.appPath,{fetcher:this.fetcher});
       this.set({status:'installing'});

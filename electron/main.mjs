@@ -10,6 +10,7 @@ import { talentById } from "../core/talents.mjs";
 import { skillById, ownsSkill, petSkills, socialCast } from "../core/skills.mjs";
 import {
   app,
+  shell,
   BrowserWindow,
   ipcMain,
   dialog,
@@ -47,6 +48,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const dev = process.argv.includes("--dev");
 const test = !app.isPackaged && process.env.PAWPRINT_TEST_MODE === "1";
 app.setName("Pawprint");
+if (process.platform === "win32") app.setAppUserModelId("studio.binmax.pawprint");
 app.setPath(
   "userData",
   test && process.env.PAWPRINT_TEST_DATA
@@ -84,6 +86,7 @@ const enqueue = (task) => {
 function snapshot() {
   return {
     ...structuredClone(store.state),
+    platform: process.platform,
     availableCoins: availableCoins(store.state),
     heldCoins: heldCoins(store.state),
     performance,
@@ -164,8 +167,10 @@ function createHome(section) {
     minWidth: 1030,
     minHeight: 730,
     backgroundColor: "#F8F7F2",
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 22, y: 23 },
+    ...(process.platform === "darwin" ? {
+      titleBarStyle: "hiddenInset",
+      trafficLightPosition: { x: 22, y: 23 },
+    } : { icon: path.join(here, "../build/icon.png") }),
     title: tr("爪印 · Pawprint"),
     webPreferences: {
       preload: path.join(here, "preload.cjs"),
@@ -248,7 +253,7 @@ function menuTemplate() {
       enabled: !!pet,
       click: () => perform(pet.id),
     },
-    { label: "打开 Codex / ChatGPT", click: () => menuAction(openClient) },
+    { label: "打开 Codex / ChatGPT", enabled: process.platform === "darwin", click: () => menuAction(openClient) },
     { type: "separator" },
     {
       label: "显示悬浮宠物",
@@ -323,7 +328,7 @@ function updateTray() {
   if (tray && !tray.isDestroyed()) {
     const q = quotaPresentation(quota?.snapshot(), store.state.settings.quotaWindow, Date.now(), language());
     const invitations = pendingInvites().length;
-    tray.setTitle(store.state.settings.trayCompact ? "" : [q.title, invitations ? String(invitations) : ""].filter(Boolean).join(" · "), { fontType: "monospacedDigit" });
+    if (process.platform === "darwin") tray.setTitle(store.state.settings.trayCompact ? "" : [q.title, invitations ? String(invitations) : ""].filter(Boolean).join(" · "), { fontType: "monospacedDigit" });
     tray.setToolTip(tr(q.tooltip + (invitations ? `\n${invitations} 个待处理邀请` : "")));
     tray.setContextMenu(buildMenu(menuTemplate()));
   }
@@ -337,12 +342,14 @@ function trayStatus() {
 function createTray(reason = "startup") {
   if (quitting) return;
   trayImage ??= nativeImage.createFromPath(
-    path.join(here, "../build/trayTemplate.png"),
+    path.join(here, process.platform === "darwin" ? "../build/trayTemplate.png" : "../build/icon.png"),
   );
   if (trayImage.isEmpty()) throw new Error("菜单栏图标缺失，请重新构建应用。");
-  trayImage.setTemplateImage(true);
+  if (process.platform === "darwin") trayImage.setTemplateImage(true);
+  else trayImage = trayImage.resize({ width: 32, height: 32 });
   if (tray && !tray.isDestroyed()) tray.destroy();
   tray = new Tray(trayImage, TRAY_GUID);
+  if (process.platform === "win32") tray.on("double-click", () => createHome("home"));
   trayLastReason = reason;
   if (reason !== "startup") trayRecoveries++;
   tray.setToolTip("爪印 · Pawprint");
@@ -754,6 +761,7 @@ else {
       await store.load();
       updates = new UpdateService({
         installed: app.getVersion(),
+        openExternal: url => shell.openExternal(url),
         appPath: path.dirname(path.dirname(path.dirname(app.getPath("exe")))),
         onChange: () => { if (home && !home.isDestroyed()) home.webContents.send("paw:changed", snapshot()); },
         quit: () => app.quit(),

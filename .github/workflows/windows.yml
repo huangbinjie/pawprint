@@ -1,0 +1,58 @@
+name: Windows build and smoke test
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  windows-x64:
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check release version
+        if: inputs.publish
+        shell: pwsh
+        run: |
+          $version = node -p 'require("./package.json").version'
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag does not match app version' }
+      - run: npm test
+      - run: npm run package:win
+      - name: Smoke test packaged Windows app
+        run: npx playwright test tests/windows-desktop.spec.mjs
+      - name: Prepare checksum
+        shell: pwsh
+        run: |
+          $version = node -p 'require("./package.json").version'
+          $name = "Pawprint-$version-win-x64-setup.exe"
+          $hash = (Get-FileHash "release/$name" -Algorithm SHA256).Hash.ToLower()
+          [System.IO.File]::WriteAllText("$pwd/release/$name.sha256", "$hash  $name`n")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pawprint-win-x64
+          path: |
+            release/*-win-x64-setup.exe
+            release/*-win-x64-setup.exe.sha256
+          if-no-files-found: error
+      - name: Attach Windows installer to release
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $version = node -p 'require("./package.json").version'
+          gh release upload $env:GITHUB_REF_NAME "release/Pawprint-$version-win-x64-setup.exe" "release/Pawprint-$version-win-x64-setup.exe.sha256" --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }

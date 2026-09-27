@@ -2,7 +2,7 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [主页](https://huangbinjie.github.io/pawprint/zh/) · [下载](https://github.com/huangbinjie/pawprint/releases/latest)
 
-爪印是一款独立开发的 Codex 桌面宠物，适用于 Apple 芯片 Mac。它把本机 Codex 活动和 GPT 模型 token 用量化作一点点成长陪伴；同事的小伙伴还可以在局域网串门和繁育。
+爪印是一款独立开发的 Codex 桌面宠物，提供 Apple 芯片 Mac 和 Windows x64 构建。它把本机 Codex 活动和 GPT 模型 token 用量化作一点点成长陪伴；同事的小伙伴还可以在局域网串门和繁育。
 
 ![爪印的奶油色虎斑猫咪](site/pet.png)
 
@@ -22,7 +22,7 @@
 
 ## 开发
 
-需要 Node.js 22.12+；桌面版面向 macOS。
+需要 Node.js 22.12+；桌面版支持 macOS 和 Windows 10/11 x64 构建。
 
 ```sh
 npm ci
@@ -34,3 +34,9 @@ npm run dev
 宠物数据保存在本机。目前没有账号、云同步、现金充值或在线交易。
 
 版本历史见 [更新记录](CHANGELOG.md)，详细规则见 [产品说明](docs/PRODUCT.md)。
+
+## Windows
+
+运行 `npm run package:win` 生成 `release/Pawprint-<版本>-win-x64-setup.exe`。Windows CI 会执行单元测试、打包和已打包应用的启动/存档测试；仍需通过 CI 和 Windows 实机验收，现有公开版本可能只有 Mac 包。
+
+Windows 通过托盘菜单和悬停提示显示额度，双击托盘图标打开小屋。更新按钮打开官方发布页，下载对应安装包并核对 SHA-256 后退出应用、运行安装程序，保留原存档。详见 [Windows 支持与验收](docs/WINDOWS.md)。

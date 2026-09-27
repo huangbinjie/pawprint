@@ -34,12 +34,12 @@ test('download verifies checksum and size before returning an installable archiv
  assert.throws(()=>checksumFrom(`${hash}  wrong.zip`,name));
 });
 test('updater reports unavailable releases and a later valid release',async()=>{
- let result=new Response('',{status:404});const updates=new UpdateService({installed:'0.11.2',appPath:'/Applications/Pawprint.app',fetcher:async()=>result});
+ let result=new Response('',{status:404});const updates=new UpdateService({platform:'darwin',arch:'arm64',installed:'0.11.2',appPath:'/Applications/Pawprint.app',fetcher:async()=>result});
  assert.equal((await updates.check()).status,'unreleased');
  result=new Response(JSON.stringify(release),{status:200,headers:{'content-type':'application/json'}});
  assert.equal((await updates.check()).release.version,'0.11.3');
 });
-test('installer swaps only after old process exits and restores on failure',async()=>{
+test('installer swaps only after old process exits and restores on failure',{skip:process.platform==='win32'},async()=>{
  const dir=await mkdtemp(path.join(tmpdir(),'pawprint-installer-test-'));
  const current=path.join(dir,'Pawprint.app'),ready=path.join(dir,'.Pawprint-new.app'),staging=path.join(dir,'staging');
  await mkdir(staging);
@@ -53,4 +53,20 @@ test('installer swaps only after old process exits and restores on failure',asyn
  assert.equal((await stat(path.join(`${current}.previous`,'new'))).isFile(),true);
  await assert.rejects(()=>run('/bin/sh',[script,current,path.join(dir,'missing.app'),staging,'99999999'],{env:{...process.env,PAWPRINT_TEST_INSTALL_NO_OPEN:'1'}}));
  assert.equal((await stat(path.join(current,'next'))).isFile(),true);
+});
+test('Windows selects only Windows x64 assets and opens the release page without quitting', async()=>{
+ const windows={...release,assets:[...release.assets,asset('Pawprint-0.11.3-win-x64-setup.exe'),asset('Pawprint-0.11.3-win-x64-setup.exe.sha256',80)]};
+ const chosen=selectRelease(windows,'0.11.2','win32','x64');
+ assert.ok(chosen.zip.endsWith('-win-x64-setup.exe'));
+ assert.equal(selectRelease(release,'0.11.2','win32','x64'),null);
+ assert.equal(selectRelease(windows,'0.11.2','win32','arm64'),null);
+ let opened;
+ const updates=new UpdateService({installed:'0.11.2',platform:'win32',arch:'x64',fetcher:async()=>new Response(JSON.stringify(windows)),openExternal:async url=>{opened=url},install:()=>assert.fail('Mac installer called'),quit:()=>assert.fail('App quit')});
+ assert.equal((await updates.check()).release.manual,true);
+ assert.equal((await updates.installLatest()).status,'available');
+ assert.equal(opened,'https://github.com/huangbinjie/pawprint/releases/tag/v0.11.3');
+});
+test('missing platform assets do not claim the app is current',async()=>{
+ const updates=new UpdateService({installed:'0.11.2',platform:'win32',arch:'x64',fetcher:async()=>new Response(JSON.stringify(release))});
+ assert.equal((await updates.check()).status,'unreleased');
 });

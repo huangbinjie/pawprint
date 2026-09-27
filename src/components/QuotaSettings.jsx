@@ -8,15 +8,15 @@ export default function QuotaSettings({ state, now, working, onCommand, onRefres
   return <section className="card settings-card">
     <h3>菜单栏额度</h3>
     <div className="setting-row"><div><strong>菜单栏图标不见了？</strong>
-      <p>可重新创建入口。若仍不显示，检查 macOS 系统设置 → 菜单栏 → 允许 Pawprint 显示，或切换仅图标模式减少占位。</p>
+      <p>{state.platform === "win32" ? "在 Windows 任务栏的隐藏图标中查找 Pawprint。额度显示在托盘菜单和悬停提示中，双击图标打开小屋。" : "可重新创建入口。若仍不显示，检查 macOS 系统设置 → 菜单栏 → 允许 Pawprint 显示，或切换仅图标模式减少占位。"}</p>
       <small data-testid="tray-status">{state.trayStatus?.created ? "入口已创建，实际显示位置由系统菜单栏决定。" : "入口当前不可用，请尝试恢复。"}</small>
     </div><button className="button secondary" onClick={onRecover}>恢复菜单栏图标</button></div>
-    <div className="setting-row"><div><strong>仅显示图标</strong><p>不在图标旁放数字，额度仍可在菜单中查看。适合菜单栏空间不足时使用。</p></div>
+    {state.platform !== "win32" && <div className="setting-row"><div><strong>仅显示图标</strong><p>不在图标旁放数字，额度仍可在菜单中查看。适合菜单栏空间不足时使用。</p></div>
       <button role="switch" aria-label="仅显示图标" aria-checked={state.settings.trayCompact === true}
         className={`toggle ${state.settings.trayCompact ? "on" : ""}`} disabled={working}
         onClick={() => onCommand({ type: "tray-compact", value: !state.settings.trayCompact })}><span /></button>
-    </div>
-    <div className="setting-row"><div><strong>图标旁显示剩余额度</strong><p>W 表示周剩余，5h 表示 5 小时剩余。按本机 Codex 记录中的额度计算，不用 token 数量估算。</p></div>
+    </div>}
+    <div className="setting-row"><div><strong>{state.platform === "win32" ? "托盘菜单显示剩余额度" : "图标旁显示剩余额度"}</strong><p>W 表示周剩余，5h 表示 5 小时剩余。按本机 Codex 记录中的额度计算，不用 token 数量估算。</p></div>
       <button role="switch" aria-label="图标旁显示剩余额度" aria-checked={enabled} className={`toggle ${enabled ? "on" : ""}`} disabled={working}
         onClick={() => onCommand({ type: "quota-settings", enabled: !enabled, window })}><span /></button>
     </div>

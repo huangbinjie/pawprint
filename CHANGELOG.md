@@ -1,6 +1,13 @@
 # Changelog
 
-Release notes for published Pawprint builds. The current desktop app is an unsigned Apple silicon beta.
+Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
+
+## 0.11.8
+
+- Add a Windows x64 NSIS installer, native window controls and a color tray icon.
+- Show Windows quota in the tray menu and tooltip; double-click the tray icon to open home.
+- Select platform-specific updates; Windows opens the release page for manual installation.
+- Build and smoke-test the packaged Windows app in CI before publishing the release.
 
 ## 0.11.7
 
