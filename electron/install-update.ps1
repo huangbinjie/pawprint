@@ -14,7 +14,11 @@ try {
   $parentProcess = Get-Process -Id $parentId -ErrorAction SilentlyContinue
   if ($parentProcess -and !$parentProcess.WaitForExit(120000)) { throw 'Pawprint did not exit in time' }
   Log 'Verifying installer checksum'
-  if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Update checksum changed' }
+  $stream = [IO.File]::OpenRead($installer)
+  $hasher = [Security.Cryptography.SHA256]::Create()
+  try { $actual = [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+  finally { $stream.Dispose(); $hasher.Dispose() }
+  if ($actual -ne $expected) { throw 'Update checksum changed' }
   # Start-Process invokes the installer directly. /D must be the last NSIS argument,
   # with no embedded quotes even when the install directory contains spaces.
   $arguments = '/S --updated --force-run /D=' + [IO.Path]::GetDirectoryName($current)
