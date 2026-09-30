@@ -101,6 +101,17 @@ jobs:
           - Three local conversation model recommendations, a GitHub-hosted catalog, automatic engine preparation, download progress, active-model display and uninstall controls. Voice recognition is not included yet.
           - Clearer update download/verification stages and installer readiness checks.
           NOTES
+          elif [ "$GITHUB_REF_NAME" = v0.12.1 ]; then
+            cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+
+          ## Pawprint 0.12.1
+          - Automatic models.dev pricing updates, cached for offline use, with provider-aware pricing for API-key models used through Codex.
+          - 30-day usage history, daily priced costs, pending pricing and per-model input, cache-read, cache-write and output token details.
+          - Claim rewards for priced usage while unknown models await pricing. Newly priced usage is credited once; repeated refreshes do not duplicate rewards.
+          - Correct handling of inherited parent metadata in subagent logs and empty usage baselines during upgrades.
+          - Improved QR visiting-card spacing and image import buttons; the native file input stays hidden.
+          - Clearer usage typography and complete English text for populated reports, pricing states and daily tables.
+          NOTES
           fi
           gh release create "$GITHUB_REF_NAME" artifacts/* --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft
 

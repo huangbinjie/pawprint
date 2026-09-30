@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { seedMatureCompanion } from "./fixtures/game.mjs";
 import { Store } from "../core/store.mjs";
+import { dayKey } from "../core/economy.mjs";
 import { openHome } from "./helpers.mjs";
 const unlocalized = page => page.evaluate(() => {
   const texts=[], walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
@@ -116,4 +117,35 @@ test("English and Chinese clients pair, visit and perform without translating na
     await expect(guest.getByRole('button',{name:'Visiting pet'})).toBeVisible();
     await pb.screenshot({path:info.outputPath('english-nearby.png')});
   } finally {await a.close();await b.close();}
+});
+
+test('populated English usage and QR controls have no untranslated interface text',async({},info)=>{
+ const dir=await mkdtemp(path.join(os.tmpdir(),'pawprint-usage-en-'));
+ const state=await seedMatureCompanion(dir);state.settings.language='en';state.settings.connected=true;state.pets[0].name='我的小屋';
+ const store=new Store(dir);await store.load();await store.save(state);
+ const reportFile=path.join(dir,'report.json');
+ await writeFile(reportFile,JSON.stringify([{provider:'codex',source:'local',adapter:'builtin-codex-v1',sourceId:'locale-fixture',updatedAt:new Date().toISOString(),historyCoverageIsEstablished:true,pricingVersion:'models.dev-fixture',pricingStatus:{status:'cached',source:'models.dev'},coverage:{unpriced:1},diagnostics:{files:1,issues:[]},daily:[{date:dayKey(Date.now()),totalTokens:213001000,totalCost:null,knownCost:61.16,pricedTokens:213000000,unpriced:1,modelBreakdowns:[{modelName:'gpt-6.1-sol',provider:'openai',totalTokens:213000000,cost:61.16,knownCost:61.16,inputTokens:212000000,cachedTokens:208000000,writeTokens:0,outputTokens:1000000,unpriced:0},{modelName:'unknown-model',provider:'custom',totalTokens:1000,cost:null,knownCost:0,inputTokens:900,cachedTokens:0,writeTokens:0,outputTokens:100,unpriced:1}]}]}]));
+ const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:dir,PAWPRINT_TEST_REPORT:reportFile,PAWPRINT_TEST_LAN:'1'}});
+ try{
+  const home=await openHome(app,'usage');
+  await expect(home.locator('.usage-model')).toHaveCount(2);
+  await expect(home.locator('.usage-token-details').first()).toContainText('Cache read');
+  await expect(home.locator('.usage-model').last().locator('header>strong')).toHaveText('—');
+  await home.locator('.usage-summary').screenshot({path:info.outputPath('english-usage-summary.png')});
+  await home.locator('.model-list').screenshot({path:info.outputPath('english-model-details.png')});
+  await home.locator('.usage-daily-details summary').click();expect(await unlocalized(home)).toEqual([]);
+  for(const tab of ['My Home','My Pets','Garden','Skills & Talents','Nearby Homes','Gene Catalog','Breeding','Usage & Wallet','Preferences']){
+   await home.locator('.sidebar').getByRole('button',{name:new RegExp('^'+tab)}).click();
+   expect(await unlocalized(home),tab).toEqual([]);
+   if(tab==='Nearby Homes'){
+    const panel=home.getByTestId('pet-cards');const file=panel.locator('input[type=file]');await expect(file).toBeHidden();expect(await file.evaluate(el=>getComputedStyle(el).display)).toBe('none');
+    await expect(panel.getByRole('button',{name:'Choose QR image',exact:true})).toBeVisible();
+    await panel.screenshot({path:info.outputPath('english-qr.png')});
+   }
+  }
+  await home.evaluate(()=>window.pawprint.command({type:'language',value:'zh'}));
+  await openHome(app,'usage');await expect(home.locator('.usage-summary')).toContainText('今日已定价费用');
+  await home.evaluate(()=>window.pawprint.command({type:'language',value:'en'}));
+  await expect(home.locator('.usage-summary')).toContainText('Priced cost today');expect(await unlocalized(home)).toEqual([]);
+ }finally{await app.close();}
 });

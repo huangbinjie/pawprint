@@ -1,5 +1,33 @@
 // English UI catalog. Keys are original source messages; game data and IDs stay unchanged.
 export default {
+  "简体中文": "Simplified Chinese",
+  "今日已定价费用": "Priced cost today",
+  "今日待定价记录": "Unpriced records today",
+  "近 {0} 天用量": "{0}-day usage",
+  "共 {0} token": "{0} tokens total",
+  "{0} 条待定价": "Unpriced: {0}",
+  "输入（含缓存）": "Input (including cache)",
+  "缓存读取": "Cache read",
+  "缓存写入": "Cache write",
+  "输出": "Output",
+  "价格表 {0} · {1}": "Price catalog {0} · {1}",
+  "未标注服务档位按标准价估算。": "Unspecified service tiers use standard pricing.",
+  "连接后显示最近 30 天的本机 Codex 记录": "Connect to see the last 30 days of local Codex usage",
+
+  "本地用量记录存在结构冲突，费用可查看，奖励暂缓兑换。": "Local usage records contain structural conflicts. Costs are visible; reward redemption is paused.",
+  "每日明细（API 等价费用估算）": "Daily details (API-equivalent estimates)",
+  "已定价费用": "Priced cost",
+  "待定价记录": "Unpriced records",
+  "日期": "Date",
+
+  "部分记录待定价；已定价用量可领取，补齐价格后补算当天差额。": "Some records await pricing. Priced usage can be claimed; today's remaining rewards are calculated when prices arrive.",
+  " + 待定价": " + awaiting pricing",
+  "已更新": "Updated",
+  "本地缓存": "Cached",
+  "离线缓存": "Offline cache",
+  "离线内置价格": "Offline bundled prices",
+  "内置价格": "Bundled prices",
+
   "我的小屋": "My Home",
   "宠物图鉴": "My Pets",
   "后花园": "Garden",

@@ -79,10 +79,12 @@
 @media(prefers-reduced-motion:reduce){.behavior-mouse.phase-watch .cat-head-motion{transform:none}}
 .pet-cards{margin-bottom:22px}
 .pet-card-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}
-.pet-card-actions input[type=file]{max-width:220px;display:block;margin-top:5px}
+.pet-card-actions input[type=file]:not([hidden]){max-width:220px;display:block;margin-top:5px}
 .pet-card-share,.pet-card-preview{display:flex;align-items:center;gap:24px;margin:18px 0;flex-wrap:wrap}
 .pet-card-preview>.cat{width:150px;height:162px}
 .pet-card-preview>div{flex:1;min-width:220px}
 .pet-cards textarea{width:100%;min-height:72px;resize:vertical;word-break:break-all}
 .card-photo{display:flex;align-items:flex-end;gap:14px;padding:12px;background:#f5f6ed;border-radius:14px}
 .card-photo>.cat{width:128px;height:144px}
+
+.pet-cards input[type=file][hidden]{display:none}

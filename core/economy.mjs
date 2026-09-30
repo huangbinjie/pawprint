@@ -152,8 +152,18 @@ export function normalizeReport(raw, now) {
       date: row.date,
       tokens: row.totalTokens,
       usd: cost ?? null,
+      knownUSD: Number.isFinite(row.knownCost) ? row.knownCost : (row.unpriced ?? report.coverage?.unpriced ?? 0) > 0 ? null : cost ?? null,
+      pricedTokens: row.pricedTokens ?? row.totalTokens,
+      inputTokens: row.inputTokens ?? 0, cachedTokens: row.cachedTokens ?? 0,
+      writeTokens: row.writeTokens ?? 0, outputTokens: row.outputTokens ?? 0,
       unpriced: row.unpriced ?? report.coverage?.unpriced ?? 0,
       models: (row.modelBreakdowns || []).map((m) => ({
+        provider: m.provider ?? "openai",
+        tokens: m.totalTokens ?? 0,
+        inputTokens: m.inputTokens ?? 0, cachedTokens: m.cachedTokens ?? 0,
+        writeTokens: m.writeTokens ?? 0, outputTokens: m.outputTokens ?? 0,
+        unpriced: m.unpriced ?? 0,
+        knownUSD: Number.isFinite(m.knownCost) ? m.knownCost : m.cost ?? null,
         name: String(m.modelName).slice(0, 90),
         usd: Number.isFinite(m.cost) ? m.cost : null,
       })),
@@ -175,6 +185,7 @@ export function normalizeReport(raw, now) {
     sourceId: report.sourceId ?? "legacy-local",
     recordDirectory: report.recordDirectory ?? null,
     pricingVersion: report.pricingVersion ?? null,
+    pricingStatus: report.pricingStatus ?? null,
     diagnostics: report.diagnostics ?? null,
   };
 }
@@ -186,11 +197,12 @@ export function observeUsage(state, report, now) {
   if (
     !report.complete ||
     !report.fresh ||
-    (row?.unpriced ?? report.unpriced) > 0 ||
     !row ||
-    row.usd === null
+    !Number.isFinite(Object.hasOwn(row, "knownUSD") ? row.knownUSD : row.usd)
   )
     return;
+  const currentUSD = Object.hasOwn(row, "knownUSD") ? row.knownUSD : row.usd;
+  const currentTokens = row.pricedTokens ?? row.tokens;
   const existing = state.usage.days[date];
   const previous = existing || {
     maxTokens: 0,
@@ -199,18 +211,19 @@ export function observeUsage(state, report, now) {
     claimed: 0,
   };
   const sourceId = report.sourceId ?? "legacy-local";
-  if (existing && (existing.sourceId ?? "legacy-local") !== sourceId) {
+  if (existing && (existing.sourceId ?? "legacy-local") !== sourceId &&
+      [existing.maxTokens, existing.maxUSD, existing.eligibleUSD, existing.claimed].some(value => value > 0)) {
     // Switching reader, directory or pricing catalog must not reward old use a second time.
-    previous.maxTokens = row.tokens;
-    previous.maxUSD = row.usd;
+    previous.maxTokens = currentTokens;
+    previous.maxUSD = currentUSD;
     previous.sourceId = sourceId;
     state.usage.days[date] = previous;
     return;
   }
-  const costDelta = Math.max(0, row.usd - previous.maxUSD);
-  if (row.tokens > previous.maxTokens) previous.eligibleUSD += costDelta;
-  previous.maxTokens = Math.max(previous.maxTokens, row.tokens);
-  previous.maxUSD = Math.max(previous.maxUSD, row.usd);
+  const costDelta = Math.max(0, currentUSD - previous.maxUSD);
+  if (currentTokens > previous.maxTokens) previous.eligibleUSD += costDelta;
+  previous.maxTokens = Math.max(previous.maxTokens, currentTokens);
+  previous.maxUSD = Math.max(previous.maxUSD, currentUSD);
   previous.sourceId = sourceId;
   state.usage.days[date] = previous;
 }

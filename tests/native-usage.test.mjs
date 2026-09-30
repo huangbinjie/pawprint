@@ -362,3 +362,98 @@ test("a corrupt non-authoritative cache is rebuilt from source records", () =>
     assert.deepEqual(b.daily, a.daily);
     assert.equal(b.diagnostics.scannedFiles, 1);
   }));
+
+test("dynamic provider pricing reparses cached unknown usage and releases only the daily difference", () =>
+  fixture(async (root, cacheDirectory) => {
+    await logFile(root, "dynamic.jsonl", [meta("dynamic", now, {model_provider: "other"}), context(now, "new-model"), meter(now, tokens(1000000, 1000, 500000))], now);
+    const first = (await scanUsage({codexHome: root, cacheDirectory, now}))[0];
+    assert.equal(first.daily.at(-1).totalCost, null);
+    const catalog = {other: {models: {"new-model": {cost: {input: 2, cache_read: 0.2, output: 10}}}}};
+    const second = (await scanUsage({codexHome: root, cacheDirectory, now, catalog, pricingVersion: "dynamic-1"}))[0];
+    close(second.daily.at(-1).totalCost, 1.11);
+    assert.equal(second.daily.at(-1).cachedTokens, 500000);
+    assert.equal(second.sourceId, first.sourceId);
+    const state = initialState(now);
+    observeUsage(state, normalizeReport([first], now), now);
+    observeUsage(state, normalizeReport([second], now), now);
+    assert.equal(availableReward(state, now), 22);
+    state.usage.days[dayKey(now)].claimed = 22;
+    observeUsage(state, normalizeReport([second], now), now);
+    assert.equal(availableReward(state, now), 0);
+  }));
+
+test("partial pricing rewards known records while keeping unknown models explicit", () =>
+  fixture(async (root, cacheDirectory) => {
+    await logFile(root, "mixed.jsonl", [meta("mixed", now), context(now), meter(now, tokens(1000000, 1000)), context(now, "unknown", "turn-2"), meter(now, tokens(1000100, 1010), tokens(100, 10))], now);
+    const report = normalizeReport(await scanUsage({codexHome: root, cacheDirectory, now}), now);
+    assert.equal(report.days.at(-1).usd, null);
+    close(report.days.at(-1).knownUSD, 20.075);
+    const state = initialState(now);
+    observeUsage(state, report, now);
+    assert.equal(availableReward(state, now), 120);
+  }));
+
+test("repeated identical session metadata is harmless while conflicting identity remains incomplete", () =>
+ fixture(async (root, cacheDirectory) => {
+  await logFile(root,"repeat.jsonl",[meta("repeat",now),context(now),meter(now,tokens()),meta("repeat",now)],now);
+  assert.equal((await scanUsage({codexHome:root,cacheDirectory,now}))[0].historyCoverageIsEstablished,true);
+  await appendFile(path.join(root,"sessions","repeat.jsonl"),JSON.stringify(meta("different",now))+"\n");
+  assert.equal((await scanUsage({codexHome:root,cacheDirectory,now}))[0].historyCoverageIsEstablished,false);
+ }));
+
+test("copied ancestor metadata keeps leaf identity and provider; mirrors and parent use are not rewarded twice", () =>
+ fixture(async (root, cacheDirectory) => {
+  const parentRows = [meta("parent-with-history", now - 200), context(now - 190), meter(now - 180, tokens(10000,1000))];
+  await logFile(root,"parent.jsonl",parentRows,now);
+  const leafMeta = meta("leaf",now - 100,{forked_from_id:"parent-with-history",parent_thread_id:"parent-with-history",subagent_history_start_ordinal:4,model_provider:"leaf-provider"});
+  const childRows = [leafMeta,...parentRows,context(now - 90,"leaf-model","leaf-turn"),meter(now - 80,tokens(11000,1100),tokens())];
+  await logFile(root,"child.jsonl",childRows,now);
+  await mkdir(path.join(root,"archived_sessions"));
+  await copyFile(path.join(root,"sessions","child.jsonl"),path.join(root,"archived_sessions","mirror.jsonl"));
+  const catalog={"leaf-provider":{models:{"leaf-model":{cost:{input:2,output:10}}}}};
+  const [report] = await scanUsage({codexHome:root,cacheDirectory,now,catalog});
+  assert.equal(report.historyCoverageIsEstablished,true);
+  assert.equal(report.daily.at(-1).totalTokens,12100);
+  assert.equal(report.daily.at(-1).modelBreakdowns.find(m=>m.modelName==="leaf-model").provider,"leaf-provider");
+  close(report.daily.at(-1).totalCost,0.153);
+  const cached = await scanUsage({codexHome:root,cacheDirectory,now,catalog});
+  assert.deepEqual(cached[0].daily,report.daily);
+  const state=initialState(now);
+  observeUsage(state,normalizeReport([report],now),now);
+  const reward=availableReward(state,now);
+  assert.equal(reward,3);
+  state.usage.days[dayKey(now)].claimed=reward;
+  observeUsage(state,normalizeReport(cached,now),now);
+  assert.equal(availableReward(state,now),0);
+ }));
+
+test("declared parent metadata before fork creation is inherited without an ordinal; unrelated identities still fail", () =>
+ fixture(async (root, cacheDirectory) => {
+  const records=[meta("leaf-time",now - 100,{forked_from_id:"parent-time"}),meta("parent-time",now - 200),context(now - 190),meter(now - 180,tokens(5000,500)),context(now - 90),meter(now - 80,tokens(6000,600),tokens())];
+  const file=await logFile(root,"time.jsonl",records,now);
+  let [report]=await scanUsage({codexHome:root,cacheDirectory,now});
+  assert.equal(report.historyCoverageIsEstablished,true);
+  assert.equal(report.daily.at(-1).totalTokens,1100);
+  await appendFile(file,JSON.stringify(meta("unrelated",now))+"\n");
+  [report]=await scanUsage({codexHome:root,cacheDirectory,now});
+  assert.equal(report.historyCoverageIsEstablished,false);
+  assert.ok(report.diagnostics.issues.includes("multiple-session-identities"));
+ }));
+
+test("ancestor identity outside the explicit inherited boundary remains a conflict", () =>
+ fixture(async(root,cacheDirectory)=>{
+  await logFile(root,"outside.jsonl",[meta("leaf-outside",now - 100,{forked_from_id:"parent-outside",subagent_history_start_ordinal:1}),meta("parent-outside",now - 200),context(now - 90),meter(now - 80,tokens())],now);
+  const [report]=await scanUsage({codexHome:root,cacheDirectory,now});
+  assert.equal(report.historyCoverageIsEstablished,false);
+ }));
+
+test("upgrading a zero-use baseline does not withhold today's newly priceable reward",()=>{
+ const state=initialState(now),date=dayKey(now);
+ state.usage.days[date]={sourceId:"old-price-version",maxTokens:0,maxUSD:0,eligibleUSD:0,claimed:0};
+ const report={complete:true,fresh:true,sourceId:"stable-source",days:[{date,tokens:1000000,pricedTokens:1000000,usd:80,knownUSD:80,unpriced:0}]};
+ observeUsage(state,report,now);
+ assert.equal(availableReward(state,now),120);
+ state.usage.days[date].claimed=120;
+ observeUsage(state,report,now);
+ assert.equal(availableReward(state,now),0);
+});

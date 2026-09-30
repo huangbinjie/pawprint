@@ -108,7 +108,7 @@ function validCachedData(data) {
 
 export async function parseSession(
   file,
-  { startMs, endMs, deadline = Date.now() + 45000 } = {},
+  { startMs, endMs, deadline = Date.now() + 45000, catalog } = {},
 ) {
   let id = null,
     created = null,
@@ -119,6 +119,8 @@ export async function parseSession(
     turn = "",
     previous = null,
     provider = "openai";
+  let metadataIdentity = null;
+  let parentId = null;
   let sawMeta = false,
     malformed = false;
   const rows = [],
@@ -149,15 +151,30 @@ export async function parseSession(
     const payload = record.payload;
     if (!payload || typeof payload !== "object") continue;
     if (record.type === "session_meta") {
+      const identity = JSON.stringify([payload.id ?? payload.session_id, payload.model_provider ?? "openai", payload.timestamp ?? record.timestamp, payload.forked_from_id ?? null, payload.parent_thread_id ?? null, payload.subagent_history_start_ordinal ?? null]);
+      if (sawMeta && identity === metadataIdentity) continue;
+      // Codex rollouts start with the leaf metadata, then may copy ancestor metadata
+      // inside the inherited prefix. Preserve the leaf identity/provider/accounting.
+      const candidateKey = payload.id ?? payload.session_id;
+      const candidateCreated = validTimestamp(payload.timestamp ?? record.timestamp);
+      const copiedAncestor = sawMeta && fork && (
+        boundary !== null
+          ? line.ordinal < boundary
+          : candidateKey === parentId && candidateCreated !== null &&
+            created !== null && candidateCreated < created
+      );
+      if (copiedAncestor) continue;
       if (sawMeta) {
         malformed = true;
         issues.add("multiple-session-identities");
         continue;
       }
       sawMeta = true;
+      metadataIdentity = identity;
       const key = payload.id ?? payload.session_id;
       if (typeof key === "string" && key.length <= 180) id = hash(key);
       created = validTimestamp(payload.timestamp ?? record.timestamp);
+      parentId = payload.forked_from_id ?? payload.parent_thread_id ?? null;
       provider = payload.model_provider ?? "openai";
       boundary =
         Number.isSafeInteger(payload.subagent_history_start_ordinal) &&
@@ -242,13 +259,15 @@ export async function parseSession(
       ? !same(delta, last)
       : old && total.input >= old.input && total.output >= old.output;
     const signature = hash(`${id}|${turn}|${total.input}|${total.output}`);
-    const usd = provider === "openai" ? estimateCost(model, last, tier) : null;
+    const usd = estimateCost(model, last, tier, catalog, provider);
     rows.push({
       id: signature,
       at: timestamp,
       date: dayKey(timestamp),
       model,
       tokens: last.total,
+      counts: last,
+      provider,
       usd,
       gap: !!gap,
     });
@@ -324,6 +343,9 @@ export async function scanUsage({
   now = Date.now(),
   days = 7,
   budgetMs = 45000,
+  catalog,
+  pricingVersion = PRICING_VERSION,
+  pricingStatus = null,
 }) {
   const started = Date.now(),
     deadline = started + budgetMs;
@@ -340,9 +362,9 @@ export async function scanUsage({
   start.setDate(start.getDate() - (days - 1));
   const startMs = start.getTime(),
     scope = hash(
-      `${READER_VERSION}|parser-3|${PRICING_VERSION}|${root}|${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
+      `${READER_VERSION}|parser-6|${pricingVersion}|${root}|${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
     );
-  const sourceId = hash(`${READER_VERSION}|${PRICING_VERSION}|${root}`);
+  const sourceId = hash(`${READER_VERSION}|${root}`);
   const { files, issues: discoveryIssues } = await discover(
     root,
     startMs,
@@ -389,6 +411,7 @@ export async function scanUsage({
           startMs,
           endMs: now,
           deadline,
+          catalog,
         });
         scannedFiles++;
       } catch (error) {
@@ -439,6 +462,8 @@ export async function scanUsage({
       totalTokens: 0,
       totalCost: 0,
       unpriced: 0,
+      inputTokens: 0, cachedTokens: 0, writeTokens: 0, outputTokens: 0,
+      pricedTokens: 0,
       models: new Map(),
     });
   }
@@ -446,24 +471,32 @@ export async function scanUsage({
     const day = totals.get(row.date);
     if (!day) continue;
     day.totalTokens += row.tokens;
+    for (const [field, key] of [["inputTokens","input"],["cachedTokens","cached"],["writeTokens","write"],["outputTokens","output"]]) day[field] += row.counts?.[key] ?? 0;
+    if (row.usd !== null && !row.gap) day.pricedTokens += row.tokens;
     if (row.usd === null || row.gap) day.unpriced++;
-    if (row.usd !== null) day.totalCost += row.usd;
-    const model = day.models.get(row.model) ?? {
+    if (row.usd !== null && !row.gap) day.totalCost += row.usd;
+    const modelKey = `${row.provider}/${row.model}`;
+    const model = day.models.get(modelKey) ?? {
+      provider: row.provider,
+      inputTokens: 0, cachedTokens: 0, writeTokens: 0, outputTokens: 0,
       modelName: row.model,
       cost: 0,
       totalTokens: 0,
       unpriced: 0,
     };
     model.totalTokens += row.tokens;
+    for (const [field, key] of [["inputTokens","input"],["cachedTokens","cached"],["writeTokens","write"],["outputTokens","output"]]) model[field] += row.counts?.[key] ?? 0;
     if (row.usd === null || row.gap) model.unpriced++;
     else model.cost += row.usd;
-    day.models.set(row.model, model);
+    day.models.set(modelKey, model);
   }
   const daily = [...totals.values()].map(({ models, ...day }) => ({
     ...day,
+    knownCost: day.totalCost,
     totalCost: day.unpriced ? null : day.totalCost,
     modelBreakdowns: [...models.values()].map((m) => ({
       ...m,
+      knownCost: m.cost,
       cost: m.unpriced ? null : m.cost,
     })),
   }));
@@ -475,7 +508,8 @@ export async function scanUsage({
       adapter: READER_VERSION,
       sourceId,
       recordDirectory: root,
-      pricingVersion: PRICING_VERSION,
+      pricingVersion,
+      pricingStatus,
       updatedAt: new Date(now).toISOString(),
       historyCoverageIsEstablished: complete,
       coverage: { unpriced },

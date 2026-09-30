@@ -342,9 +342,11 @@ export default function App() {
   const warn =
     state.usage.lastError ||
     (state.usage.report && !state.usage.report.complete
-      ? "用量历史还在扫描，暂不兑换。请稍后刷新。"
-      : state.usage.report?.unpriced > 0
-        ? "部分记录缺少完整计价信息，受影响日期暂不发放新增奖励。"
+      ? state.usage.report.diagnostics?.issues?.some(issue => ["multiple-session-identities", "conflicting-duplicate", "malformed-stat-record"].includes(issue))
+        ? "本地用量记录存在结构冲突，费用可查看，奖励暂缓兑换。"
+        : "用量历史还在扫描，暂不兑换。请稍后刷新。"
+      : today?.unpriced > 0
+        ? "部分记录待定价；已定价用量可领取，补齐价格后补算当天差额。"
         : state.usage.report && !state.usage.report.fresh
           ? "报告已过期，请刷新本地用量。"
           : null);
@@ -1389,19 +1391,41 @@ export default function App() {
                     </strong>
                   </div>
                 </div>
+                <dl className="usage-summary">
+                  <div><dt>{t("今日已定价费用")}</dt><dd>{money(today?.knownUSD ?? today?.usd)}</dd></div>
+                  <div><dt>{t("今日待定价记录")}</dt><dd>{today?.unpriced ?? 0}</dd></div>
+                  <div><dt>{f("近 {0} 天用量", state.usage.report?.days.length ?? 0)}</dt><dd>{compact(state.usage.report?.days.reduce((n, d) => n + d.tokens, 0))}<small> tokens</small></dd></div>
+                </dl>
                 <UsageChart report={state.usage.report} today={todayKey} />
                 <div className="model-list">
                   {today?.models.map((model) => (
-                    <span key={model.name}>
-                      {model.name}
-                      <strong>{money(model.usd)}</strong>
-                    </span>
+                    <article className="usage-model" key={`${model.provider}/${model.name}`}>
+                      <header><div><span className="usage-provider"><RawText>{model.provider}</RawText></span><h4><RawText>{model.name}</RawText></h4></div><strong>{money(model.usd ?? (model.knownUSD > 0 ? model.knownUSD : null))}</strong></header>
+                      <p className="usage-model-total">{f("共 {0} token", compact(model.tokens))}{model.unpriced > 0 && <span className="usage-pending">{f("{0} 条待定价", model.unpriced)}</span>}</p>
+                      <dl className="usage-token-details">
+                        <div><dt>{t("输入（含缓存）")}</dt><dd>{compact(model.inputTokens)}</dd></div>
+                        <div><dt>{t("缓存读取")}</dt><dd>{compact(model.cachedTokens)}</dd></div>
+                        <div><dt>{t("缓存写入")}</dt><dd>{compact(model.writeTokens)}</dd></div>
+                        <div><dt>{t("输出")}</dt><dd>{compact(model.outputTokens)}</dd></div>
+                      </dl>
+                    </article>
                   ))}
                 </div>
+                <details className="usage-daily-details">
+                  <summary>{t("每日明细（API 等价费用估算）")}</summary>
+                  <div className="usage-table-scroll">
+                    <table>
+                      <thead><tr><th>{t("日期")}</th><th>Tokens</th><th>{t("已定价费用")}</th><th>{t("待定价记录")}</th></tr></thead>
+                      <tbody>{state.usage.report?.days.slice().reverse().map(day => (
+                        <tr key={day.date}><td>{day.date}</td><td>{compact(day.tokens)}</td><td>{money(day.knownUSD ?? day.usd)}</td><td>{day.unpriced}</td></tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </details>
                 {state.usage.report?.pricingVersion && (
                   <p className="pricing-note">
-                    价格表 {state.usage.report.pricingVersion} ·
-                    未标注服务档位按标准价估算。
+                    {f("价格表 {0} · {1}", state.usage.report.pricingVersion, t(({ updated: "已更新", cached: "本地缓存", stale: "离线缓存", "offline-fallback": "离线内置价格" })[state.usage.report.pricingStatus?.status] ?? "内置价格"))}
+                    {" · "}{t("未标注服务档位按标准价估算。")}
                     {state.usage.report.diagnostics?.files === 0
                       ? " 暂无本机使用记录。"
                       : ""}
@@ -1413,7 +1437,7 @@ export default function App() {
                       ? "正在扫描本地历史，请稍候…"
                       : state.usage.report
                         ? `上次读取 ${new Date(state.usage.report.fetchedAt).toLocaleTimeString(localeTag(), { hour: "2-digit", minute: "2-digit" })} · 每 15 分钟自动刷新`
-                        : "连接后显示最近 7 天的本机 Codex 记录"}
+                        : "连接后显示最近 30 天的本机 Codex 记录"}
                   </span>
                   <ShieldCheck size={14} />
                 </div>

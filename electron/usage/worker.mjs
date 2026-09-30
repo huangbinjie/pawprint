@@ -1,7 +1,8 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { scanUsage } from "./scanner.mjs";
+import { loadCatalog } from "./catalog.mjs";
 try {
-  parentPort.postMessage({ ok: true, report: await scanUsage(workerData) });
+  parentPort.postMessage({ ok: true, report: await scanUsage({ ...workerData, days: 30, ...await loadCatalog(workerData) }) });
 } catch (error) {
   parentPort.postMessage({
     ok: false,

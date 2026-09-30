@@ -2,6 +2,15 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.12.1
+
+- Automatically refresh model prices from models.dev, with a local cache and offline fallback. Match API-key models by the provider and model recorded by Codex.
+- Show 30 days of usage, daily priced costs, unpriced records and per-model input, cache-read, cache-write and output token details.
+- Let priced usage earn today's rewards while unknown models await pricing; avoid duplicate rewards when prices or reports refresh.
+- Recognize inherited parent metadata in subagent rollouts without double-counting copied history or archive mirrors. Preserve rewards when upgrading an empty usage baseline.
+- Refine QR visiting-card spacing and image import controls, including the hidden file picker.
+- Improve usage typography and complete English text for populated reports, pricing states and daily tables.
+
 ## 0.11.10
 
 - Download and use recommended Ollama models directly from Pawprint, with progress, cancellation, existing-model discovery, a trial run and automatic connection setup.

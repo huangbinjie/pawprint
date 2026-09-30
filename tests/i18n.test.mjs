@@ -30,3 +30,9 @@ test("language preferences preserve every game field and only new English births
   assert.deepEqual(chinese.pets, hatched.pets);
   assert.throws(() => transition(before, { type: "language", value: "fr" }, ctx));
 });
+
+test("populated usage summaries, pricing states and token details have English copy",()=>{
+ const labels=["今日已定价费用","今日待定价记录","输入（含缓存）","缓存读取","缓存写入","输出","已更新","本地缓存","离线缓存","离线内置价格","内置价格","每日明细（API 等价费用估算）","已定价费用","待定价记录","日期","未标注服务档位按标准价估算。","连接后显示最近 30 天的本机 Codex 记录"];
+ for(const label of labels)assert.ok(!/[\u3400-\u9fff]/.test(translateText(label,"en")),label);
+ for(const [key,args] of [["近 {0} 天用量",[30]],["共 {0} token",["213M"]],["{0} 条待定价",[1]],["价格表 {0} · {1}",["models.dev-fixture","Cached"]]])assert.ok(!/[\u3400-\u9fff]/.test(formatText(key,args,"en")),key);
+});

@@ -66,7 +66,12 @@ export function tokenCounts(value) {
     return null;
   return { ...n, total: n.input + n.output };
 }
-export function estimateCost(model, counts, tier) {
+export function estimateCost(model, counts, tier, catalog, provider = "openai") {
+  const dynamic = catalog?.[provider]?.models;
+  const clean = String(model).trim().toLowerCase().replace(/^openai\//, "");
+  const entry = dynamic?.[clean] ?? dynamic?.[clean.replace(/-\d{4}-\d{2}-\d{2}$/, "")];
+  if (entry?.cost) return catalogCost(entry, counts, tier);
+  if (provider !== "openai") return null;
   const price = PRICES[canonicalModel(model)];
   if (!price) return null;
   const service = tier ?? "default";
@@ -106,4 +111,24 @@ export function estimateCost(model, counts, tier) {
       mode) /
     1e6;
   return Number.isFinite(usd) && usd >= 0 ? usd : null;
+}
+
+function catalogCost(entry, counts, tier = "default") {
+  if (!["default", "standard", "auto", "priority", "fast", "flex", "batch"].includes(tier ?? "default")) return null;
+  let cost = entry.cost;
+  const contextTiers = (cost.tiers ?? []).filter(t => t.tier?.type === "context" && Number.isFinite(t.tier.size)).sort((a,b) => a.tier.size-b.tier.size);
+  for (const t of contextTiers) if (counts.input > t.tier.size) cost = t;
+  const fast = tier === "priority" || tier === "fast";
+  if (fast) {
+    const fastCost = entry.experimental?.modes?.fast?.cost;
+    if (!fastCost) return null;
+    // Do not invent a fast long-context multiplier when the catalog omits it.
+    if (cost !== entry.cost) return null;
+    cost = fastCost;
+  }
+  const ordinary = counts.input - counts.cached - counts.write;
+  const parts = [[ordinary, cost.input], [counts.cached, cost.cache_read], [counts.write, cost.cache_write], [counts.output, cost.output]];
+  if (parts.some(([n, rate]) => n > 0 && (!Number.isFinite(rate) || rate < 0))) return null;
+  const factor = tier === "flex" || tier === "batch" ? 0.5 : 1;
+  return parts.reduce((sum, [n, rate]) => sum + (n ? n * rate : 0), 0) * factor / 1e6;
 }
