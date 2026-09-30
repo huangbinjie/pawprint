@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "revision": "2026-09-30",
+  "models": [
+    {
+      "id": "qwen3.5:0.8b",
+      "name": "Qwen3.5 0.8B",
+      "sizeGB": 1.0,
+      "minMemoryGB": 4,
+      "memoryGB": 8,
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "supportsTools": true,
+      "roles": [
+        "light"
+      ],
+      "source": "https://ollama.com/library/qwen3.5",
+      "contextTokens": 2048
+    },
+    {
+      "id": "qwen3.5:2b",
+      "name": "Qwen3.5 2B",
+      "sizeGB": 2.7,
+      "minMemoryGB": 8,
+      "memoryGB": 8,
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "supportsTools": true,
+      "roles": [
+        "balanced"
+      ],
+      "source": "https://ollama.com/library/qwen3.5",
+      "contextTokens": 4096,
+      "languagePriority": {
+        "zh": 2,
+        "en": 1
+      }
+    },
+    {
+      "id": "phi4-mini:latest",
+      "name": "Phi-4 Mini",
+      "sizeGB": 2.5,
+      "minMemoryGB": 8,
+      "memoryGB": 12,
+      "languages": [
+        "en",
+        "zh"
+      ],
+      "supportsTools": true,
+      "roles": [
+        "balanced"
+      ],
+      "source": "https://ollama.com/library/phi4-mini",
+      "contextTokens": 4096,
+      "languagePriority": {
+        "zh": 1,
+        "en": 3
+      }
+    },
+    {
+      "id": "qwen3.5:4b",
+      "name": "Qwen3.5 4B",
+      "sizeGB": 3.4,
+      "minMemoryGB": 12,
+      "memoryGB": 16,
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "supportsTools": true,
+      "roles": [
+        "balanced"
+      ],
+      "source": "https://ollama.com/library/qwen3.5",
+      "contextTokens": 4096,
+      "languagePriority": {
+        "zh": 3,
+        "en": 2
+      }
+    },
+    {
+      "id": "qwen3.5:9b",
+      "name": "Qwen3.5 9B",
+      "sizeGB": 6.6,
+      "minMemoryGB": 16,
+      "memoryGB": 24,
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "supportsTools": true,
+      "roles": [
+        "balanced"
+      ],
+      "source": "https://ollama.com/library/qwen3.5",
+      "contextTokens": 4096,
+      "languagePriority": {
+        "zh": 3,
+        "en": 3
+      }
+    },
+    {
+      "id": "qwen3.5:27b",
+      "name": "Qwen3.5 27B",
+      "sizeGB": 17,
+      "minMemoryGB": 32,
+      "memoryGB": 48,
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "supportsTools": true,
+      "roles": [
+        "quality"
+      ],
+      "source": "https://ollama.com/library/qwen3.5",
+      "contextTokens": 4096
+    },
+    {
+      "id": "qwen3:4b",
+      "name": "Qwen3 4B",
+      "sizeGB": 2.5,
+      "minMemoryGB": 8,
+      "memoryGB": 8,
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "supportsTools": true,
+      "roles": [],
+      "source": "https://ollama.com/library/qwen3",
+      "contextTokens": 4096
+    },
+    {
+      "id": "qwen3:8b",
+      "name": "Qwen3 8B",
+      "sizeGB": 5.2,
+      "minMemoryGB": 16,
+      "memoryGB": 16,
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "supportsTools": true,
+      "roles": [],
+      "source": "https://ollama.com/library/qwen3",
+      "contextTokens": 4096
+    },
+    {
+      "id": "qwen3:14b",
+      "name": "Qwen3 14B",
+      "sizeGB": 9.3,
+      "minMemoryGB": 24,
+      "memoryGB": 24,
+      "languages": [
+        "zh",
+        "en"
+      ],
+      "supportsTools": true,
+      "roles": [],
+      "source": "https://ollama.com/library/qwen3",
+      "contextTokens": 4096
+    }
+  ]
+}
