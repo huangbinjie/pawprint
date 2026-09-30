@@ -5,6 +5,9 @@ ready=$2
 staging=$3
 pid=$4
 backup="${current}.previous"
+if [ ! -d "$ready" ] || [ ! -w "$(dirname "$current")" ] || [ ! -w "$current" ]; then exit 1; fi
+# Only let the app quit after this helper has validated its inputs.
+touch "$staging/helper.ready"
 count=0
 while kill -0 "$pid" 2>/dev/null && [ "$count" -lt 120 ]; do sleep 1; count=$((count + 1)); done
 if kill -0 "$pid" 2>/dev/null; then exit 1; fi

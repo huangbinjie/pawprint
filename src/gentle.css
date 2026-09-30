@@ -14,7 +14,7 @@
 .idle-actor.edge-top { transform:rotate(180deg) scaleX(var(--pet-facing,1)); }
 .idle-actor.edge-left { transform:rotate(90deg) scaleX(var(--pet-facing,1)); }
 .idle-actor.edge-right { transform:rotate(-90deg) scaleX(var(--pet-facing,1)); }
-.gentle-cat.skill-chase .cat-body {animation-name:gentle-chase}
+.gentle-cat.skill-chase:not(.tailless-look) .cat-body {animation-name:gentle-chase}
 @keyframes gentle-chase {0%{transform:rotate(0)}70%,100%{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.gentle-cat .cat-eye,.gentle-cat .cat-tail,.gentle-cat .gentle-ear,.gentle-cat .cat-body{animation:none!important}}
 /* The transparent pet window clips a rectangular focus ring into two bars.
@@ -24,3 +24,65 @@
 .floating-pet .float-cat-button:focus-visible .egg { filter: drop-shadow(0 0 3px #8da783); }
 
 .pet-bubble { padding: 5px 9px; }
+
+/* Everyday gestures share the existing artwork; collected skills keep their full show. */
+.idle-pose-observe .cat-body, .skill-observe .cat-body {transform-origin:145px 270px;animation:everyday-observe 4s ease-in-out both}
+.idle-pose-doze .cat-eye,.skill-doze .cat-eye {animation:everyday-sleep-eyes 8s ease-in-out both}
+.idle-pose-doze .cat-body,.skill-doze .cat-body {transform-origin:145px 270px;animation:everyday-doze 8s ease-in-out both}
+.idle-pose-wash .cat-frontpaw-right,.skill-wash .cat-frontpaw-right {transform-origin:174px 220px;animation:everyday-wash 2s ease-in-out 3}
+.idle-pose-wash .cat-body,.skill-wash .cat-body {transform-origin:145px 270px;animation:everyday-observe 4s ease-in-out 2}
+.behavior-mouse.phase-approach .cat-body,.behavior-peek.phase-approach .cat-body {animation:idle-step-body .6s ease-in-out infinite}
+.behavior-mouse.phase-pounce .cat-frontpaw-right {transform-origin:174px 220px;animation:everyday-pounce 2.5s ease-in-out both}
+.behavior-peek {overflow:hidden}
+.behavior-peek .cat {transition:translate .8s ease-in-out}
+.behavior-peek.phase-hide.peek-left .cat {translate:-48% 0}
+.behavior-peek.phase-hide.peek-right .cat {translate:-48% 0}
+.skill-peek .cat-body {transform-origin:145px 270px;animation:everyday-observe 4s ease-in-out 2}
+.idle-pose-toyroll .cat-frontpaw-right,.skill-toyroll .cat-frontpaw-right {transform-origin:174px 220px;animation:everyday-toy-paw 8s ease-in-out both}
+.idle-pose-toyroll .cat-body {transform-origin:145px 270px;animation:everyday-observe 4s ease-in-out both}
+.toy-ball.toy-surprise {animation:everyday-toy-roll 8s ease-in-out both}
+@keyframes everyday-observe {0%,100%{transform:rotate(0)}22%,40%{transform:rotate(-3deg)}62%,76%{transform:rotate(2deg)}}
+@keyframes everyday-sleep-eyes {0%,100%{transform:scaleY(1)}25%,80%{transform:scaleY(.08)}86%{transform:scaleY(.7)}}
+@keyframes everyday-doze {0%,100%{transform:translateY(0) rotate(0)}35%,65%{transform:translateY(3px) rotate(2deg)}72%{transform:translateY(-2px) rotate(-1deg)}}
+@keyframes everyday-wash {0%,100%{transform:rotate(0)}25%,65%{transform:rotate(-85deg) translate(-7px,-8px)}45%{transform:rotate(-78deg) translate(-3px,-13px)}}
+@keyframes everyday-pounce {0%,100%{transform:rotate(0)}25%{transform:rotate(-22deg)}45%,58%{transform:rotate(-58deg) translate(9px,-3px)}}
+@keyframes everyday-toy-paw {0%,30%,100%{transform:rotate(0)}42%,52%{transform:rotate(-45deg) translate(7px,-2px)}65%{transform:rotate(-12deg)}}
+@keyframes everyday-toy-roll {0%{transform:translateX(105px) rotate(0);opacity:0}8%{opacity:1}30%,42%{transform:translateX(35px) rotate(-210deg)}58%{transform:translateX(82px) rotate(80deg)}80%{transform:translateX(23px) rotate(-240deg);opacity:1}100%{transform:translateX(-100px) rotate(-520deg);opacity:0}}
+@media(prefers-reduced-motion:reduce){.idle-actor .cat,.idle-actor .cat *,.toy-surprise{animation:none!important;transition:none!important;translate:none!important}}
+@media(prefers-reduced-motion:reduce){.skill-observe *,.skill-doze *,.skill-wash *,.skill-mouse *,.skill-peek *,.skill-toyroll *{animation:none!important}}
+
+/* Deliberate attention: head, gaze and ears react together, not just the whole body. */
+.skill-observe .cat-head-motion {transform-origin:139px 192px;animation:attention-head 4s ease-in-out both}
+.skill-observe .cat-gaze {animation:attention-gaze 4s ease-in-out both}
+.skill-observe .gentle-ear {animation:attention-ear 4s ease-in-out both}
+.skill-observe .cat-eye {animation:none}
+@keyframes attention-head {0%,100%{transform:rotate(0)translateY(0)}12%,36%{transform:rotate(-9deg)translateY(-3px)}55%,78%{transform:rotate(7deg)translateY(-1px)}}
+@keyframes attention-gaze {0%,100%{transform:translateX(0)}12%,36%{transform:translateX(-3px)}55%,78%{transform:translateX(3px)}}
+@keyframes attention-ear {0%,100%{transform:rotate(0)}12%,25%{transform:rotate(-12deg)}18%,33%{transform:rotate(8deg)}55%,70%{transform:rotate(-7deg)}}
+/* Pursuit uses the original portrait and faster versions of its existing footsteps. */
+.behavior-mouse.phase-approach .cat-body {animation:idle-step-body .32s ease-in-out infinite;transform-origin:145px 270px}
+.behavior-mouse.phase-approach .cat-frontpaw-left,.behavior-mouse.phase-approach .cat-frontpaw-right {transform-box:fill-box;transform-origin:top center;animation:idle-step-paw .32s ease-in-out infinite}
+.behavior-mouse.phase-approach .cat-frontpaw-right {animation-delay:-.16s}
+.behavior-peek.phase-approach .cat-frontpaw-left,.behavior-peek.phase-approach .cat-frontpaw-right {transform-box:fill-box;transform-origin:top center;animation:idle-step-paw .6s ease-in-out infinite}
+.behavior-peek.phase-approach .cat-frontpaw-right {animation-delay:-.3s}
+@media(prefers-reduced-motion:reduce){.behavior-mouse *, .behavior-peek *, .skill-observe *{animation:none!important}}
+.cursor-attention .cat-head-motion {transform-origin:139px 192px;transform:rotate(calc(var(--look-x,0) * 4deg));transition:transform .45s ease-in-out}
+.cursor-attention .cat-gaze {transform:translate(calc(var(--look-x,0) * 4px),calc(var(--look-y,0) * 3px));transition:transform .35s ease-in-out}
+.cat:not(.cursor-attention) .cat-head-motion,.cat:not(.cursor-attention) .cat-gaze {transition:transform .45s ease-in-out}
+@media(prefers-reduced-motion:reduce){.cursor-attention .cat-head-motion,.cursor-attention .cat-gaze{transform:none;transition:none}}
+.companion-profile{margin-top:12px;padding-top:12px;border-top:1px solid #e8e9df}
+.companion-profile h4{margin-bottom:6px}
+.companion-profile .traits{margin:8px 0}
+.behavior-mouse.phase-watch .cursor-attention .cat-head-motion{transform:rotate(calc(var(--look-x,0) * 7deg))}
+.behavior-mouse.phase-watch .gentle-ear{animation:tease-ear .8s ease-in-out both}
+@keyframes tease-ear{0%,100%{transform:rotate(0)}35%{transform:rotate(-10deg)}65%{transform:rotate(5deg)}}
+@media(prefers-reduced-motion:reduce){.behavior-mouse.phase-watch .cat-head-motion{transform:none}}
+.pet-cards{margin-bottom:22px}
+.pet-card-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}
+.pet-card-actions input[type=file]{max-width:220px;display:block;margin-top:5px}
+.pet-card-share,.pet-card-preview{display:flex;align-items:center;gap:24px;margin:18px 0;flex-wrap:wrap}
+.pet-card-preview>.cat{width:150px;height:162px}
+.pet-card-preview>div{flex:1;min-width:220px}
+.pet-cards textarea{width:100%;min-height:72px;resize:vertical;word-break:break-all}
+.card-photo{display:flex;align-items:flex-end;gap:14px;padding:12px;background:#f5f6ed;border-radius:14px}
+.card-photo>.cat{width:128px;height:144px}

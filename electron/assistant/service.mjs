@@ -70,16 +70,17 @@ export class AssistantService {
     const controller = new AbortController(); this.abort = controller;
     const timer = setTimeout(() => controller.abort(), 60000);
     try {
-      const response = await this.fetchImpl(c.baseURL + '/chat/completions', { method: 'POST', redirect: 'error', signal: controller.signal,
+      const nativeOllama=c.provider==='ollama';
+      const response = await this.fetchImpl(nativeOllama ? c.baseURL.replace(/\/v1$/, '')+'/api/chat' : c.baseURL + '/chat/completions', { method: 'POST', redirect: 'error', signal: controller.signal,
         headers: { 'Content-Type': 'application/json', ...(key ? (c.provider === 'mimo' ? { 'api-key': key } : { Authorization: `Bearer ${key}` }) : {}) },
-        body: JSON.stringify({ model: c.model, messages, stream: false, ...(tools ? { tools: ASSISTANT_TOOLS, tool_choice: 'auto' } : {}) }) });
+        body: JSON.stringify({ model: c.model, messages, stream: false, ...(nativeOllama?{think:false,options:{num_ctx:4096},keep_alive:'2m'}:{}), ...(tools ? { tools: ASSISTANT_TOOLS, tool_choice: 'auto' } : {}) }) });
       if (!response.ok) throw new Error(`模型接口返回 HTTP ${response.status}，请核对地址、模型名称、额度及工具调用支持。`);
-      const data = await response.json(), message = data.choices?.[0]?.message;
+      const data = await response.json(), message = data.choices?.[0]?.message || (nativeOllama?data.message:null);
       if (!message) throw new Error('接口不兼容 Chat Completions。');
       if (message.tool_calls?.length) {
         if (!tools || message.tool_calls.length !== 1) throw new Error('请一次执行一个操作。');
         const call = message.tool_calls[0];
-        let args; try { args = JSON.parse(call.function.arguments); } catch { throw new Error('模型返回了无效工具参数。'); }
+        let args; try { args = typeof call.function.arguments==='string'?JSON.parse(call.function.arguments):call.function.arguments; } catch { throw new Error('模型返回了无效工具参数。'); }
         return { action: validateAction(call.function.name, args) };
       }
       if (typeof message.content !== 'string' || !message.content.trim()) throw new Error('模型没有返回回答。');
@@ -102,7 +103,7 @@ export class AssistantService {
     try {
       const command = stripPetGreeting(text, pet.name) ?? text;
       const history = [...(this.histories.get(pet.id) || [])];
-      while (history.length && history.reduce((n, m) => n + m.content.length, 0) > 8000) history.splice(0, 2);
+      while (history.length && history.reduce((n, m) => n + m.content.length, 0) > (this.config.provider==='ollama'?4000:8000)) history.splice(0, 2);
       const messages = [{ role: 'system', content: petPrompt(pet, this.config.profiles[pet.id], this.getLanguage()) }, ...history, { role: 'user', content: command || '和我打个招呼。' }];
       const shortcut = this.config.actionsEnabled && quickAction(command);
       const result = shortcut ? { action: shortcut } : await this.request(messages, { tools: this.config.actionsEnabled });

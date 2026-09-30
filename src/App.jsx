@@ -37,6 +37,7 @@ import {
   Music,
   Wifi,
 } from "lucide-react";
+import CompanionProfile from "./components/CompanionProfile.jsx";
 import Cat from "./components/Cat.jsx";
 import Egg from "./components/Egg.jsx";
 import TalentRoom from "./components/TalentRoom.jsx";
@@ -175,7 +176,10 @@ export default function App() {
       );
     return api.onState(setState);
   }, []);
-  useEffect(() => api?.onIdle(idle => setRawState(previous => previous ? { ...previous, idle } : previous)), []);
+  useEffect(() => api?.onIdle(idle => {
+    if (idle.mode !== "rest") setPetting(false);
+    setRawState(previous => previous ? { ...previous, idle } : previous);
+  }), []);
   useEffect(() => {
     const id = setInterval(() => setTick(Date.now()), 1000);
     return () => clearInterval(id);
@@ -290,22 +294,23 @@ export default function App() {
   const burned = spent - transferred;
   function greetPet() {
     setPetting(true);
-    void api.command({ type: "visit" }).then((r) => {
+    void api.command(pet ? { type: "pet-interact", petId: pet.id, kind: "touch" } : { type: "visit" }).then((r) => {
       if (r.ok) setState(r.data);
     });
   }
   const spending = state.availableCoins ?? state.balance;
+  const manualChase = state.idle?.mode === "mouse" && state.idle?.manual;
   const playing =
-    pet &&
+    !(manualChase && state.performance?.source === "activity") && pet &&
     state.performance?.petId === pet.id &&
     !state.performance.guestId &&
     tick - state.performance.at < (state.performance.duration || 6000);
   const activityWorking = state.activity?.status === "running";
-  const idle = activityWorking || playing || petting ? { mode: "rest", facing: 1, edge: "bottom" } : state.idle || { mode: "rest", facing: 1, edge: "bottom" };
+  const idle = (activityWorking && !manualChase) || playing || petting ? { mode: "rest", facing: 1, edge: "bottom", gaze: playing || petting ? null : state.idle?.gaze } : state.idle || { mode: "rest", facing: 1, edge: "bottom" };
   const desktopStyle = { width: 220, height: 242, transform: `scale(${state.displayScale || 1})`, transformOrigin: "top left", "--desktop-pet-scale": state.displayScale || 1 };
   async function playSkill(id, skillId) {
     const result = await api.performSkill(id, skillId);
-    if (result.ok) setState(result.data); else setToast({ text: result.error, error: true });
+    if (result.ok) { setState(result.data); if (skillId === "mouse") setToast({ text: "移动光标和它玩一小会儿；平时在猫身上晃几下也能触发。" }); } else setToast({ text: result.error, error: true });
   }
   async function takeBall() {
     const result = await api.playBall();
@@ -399,7 +404,7 @@ export default function App() {
     );
   }
   if (guestId) {
-    const visitor = state.lan?.visitors.find((v) => v.id === guestId);
+    const visitor = [...(state.lan?.visitors || []), ...(state.cardVisitors || [])].find((v) => v.id === guestId);
     if (!visitor) return <div className="floating-pet minimal" />;
     if (state.socialPerformance?.visitId === guestId)
       return <div style={{ ...desktopStyle, width: 420 }}><SocialScene scene={state.socialPerformance} onEnd={() => lanAction({ type: "end-social" })} /></div>;
@@ -436,7 +441,7 @@ export default function App() {
           className={`float-cat-button ${pet ? "" : "float-egg-button"}`}
           data-interactive
           aria-label={pet ? "桌面宠物" : "桌面宠物蛋"}
-          title="拖动移动 · 双击打开小屋 · 右键菜单"
+          title="晃晃鼠标逗它 · 点击摸摸 · 双击小屋 · 右键菜单"
           onContextMenu={(event) => {
             event.preventDefault();
             api.showMenu();
@@ -485,13 +490,13 @@ export default function App() {
           }}
         >
           {pet ? (
-            <div className={`idle-actor edge-${idle.edge || "bottom"}`} style={{ "--pet-facing": idle.facing || 1 }}>
+            <div className={`idle-actor edge-${idle.edge || "bottom"} behavior-${idle.mode} phase-${idle.phase || "rest"} peek-${idle.peekSide || "left"}`} key={`${idle.mode}-${idle.startedAt}`} style={{ "--pet-facing": idle.facing || 1, "--look-x": (idle.gaze?.x || 0) * (idle.facing || 1), "--look-y": idle.gaze?.y || 0 }}>
             <Cat
               genome={pet.genome}
-              className={activityWorking && !playing && !petting ? "working" : `idle-pose-${idle.mode}`}
+              className={`${activityWorking && !manualChase && !playing && !petting ? "working" : `idle-pose-${idle.mode}`} ${idle.gaze ? "cursor-attention" : ""}`}
               mood={petting ? "happy" : "idle"}
-              talentId={playing && !state.performance.skillId ? pet.talent.id : null}
-              skillId={playing ? state.performance.skillId : idle.mode !== "ball" && skillById(idle.mode)?.category === "idle" ? idle.mode : null}
+              talentId={playing && !state.performance.skillId ? pet.talent.id : idle.mode === "talent" ? idle.talentId : null}
+              skillId={playing ? state.performance.skillId : !["ball", "toyroll"].includes(idle.mode) && skillById(idle.mode) ? idle.mode : null}
               talentLevel={pet.talent.level}
             />
             </div>
@@ -499,7 +504,7 @@ export default function App() {
             <Egg ready={!pendingEgg || tick >= pendingEgg.readyAt} />
           )}
         </button>
-        {pet && idle.mode === "ball" && <div className="toy-ball" key={idle.startedAt} aria-label="宠物玩具球" role="img">
+        {pet && ["ball", "toyroll"].includes(idle.mode) && <div className={`toy-ball ${idle.mode === "toyroll" ? "toy-surprise" : ""}`} key={idle.startedAt} aria-label="宠物玩具球" role="img">
           <svg viewBox="0 0 40 40" aria-hidden="true">
             <circle cx="20" cy="20" r="17" fill="#dda366" stroke="#a77543" strokeWidth="2" />
             <path d="M5 12Q21 19 35 12M5 28Q21 20 35 28M20 3Q8 20 20 37M20 3Q32 20 20 37" fill="none" stroke="#fff4d6" strokeWidth="3" />
@@ -775,6 +780,8 @@ export default function App() {
                             ? "已成年"
                             : `成长中 · 陪伴 ${companionDays(pet, tick)}/${state.rules.matureActiveDays} 个活跃日`}
                         </p>
+                        <CompanionProfile pet={pet} language={state.settings.language} />
+                        <button className="text-button" onClick={()=>setTab("nearby")}>分享二维码访问卡</button>
                         <div className="identity-footer">
                           {geneButton(pet)}
                           <span>{GENE_KEYS.length} 组基因</span>
@@ -953,6 +960,7 @@ export default function App() {
               working={working}
               run={lanAction}
               onConsent={() => setModal({ type: "lan-consent" })}
+              onState={setState}
             />
           )}
           {tab === "garden" && (
@@ -1499,7 +1507,7 @@ export default function App() {
                       state.update?.status === "current" ? "当前已是最新版" :
                       state.update?.status === "unreleased" ? "尚无可用的公开版本" :
                       state.update?.status === "checking" ? "正在检查更新…" :
-                      state.update?.status === "downloading" ? "正在下载并校验…" :
+                      state.update?.status === "downloading" ? ({verifying: "正在校验安装包…", extracting: "正在解压安装包…", preparing: "正在准备安装…"}[state.update.progress?.phase] || "正在下载安装包…") :
                       state.update?.status === "installing" ? "正在安装并重启…" :
                       state.update?.status === "error" ? (state.settings.language === "en" ? `Update failed: ${t(state.update.error)}` : `更新失败：${state.update.error}`) : "从 GitHub Release 检查新版本"}</strong>
                     <p>{state.platform === "win32" ? "自动下载 Windows 安装包并校验，保存后退出安装并自动重启；宠物与设置会保留。" : "仅下载 Pawprint 官方仓库的 Apple 芯片 Mac 包；校验 SHA-256、应用标识和版本后安装。安装时会重启应用。"}</p>
@@ -1509,7 +1517,7 @@ export default function App() {
                     if (!r.ok) setToast({text:r.error,error:true});
                   }}><RefreshCw size={14} />检查更新</button>
                 </div>
-                {state.update?.status === 'downloading' && <div role="status"><progress aria-label="更新下载进度" max="100" value={state.update.progress?.percent || 0} /><span> {state.update.progress?.percent || 0}%</span></div>}
+                {state.update?.status === 'downloading' && <div role="status"><progress aria-label="更新进度" max="100" value={state.update.progress?.phase === 'downloading' ? state.update.progress?.percent || 0 : undefined} /><span> {state.update.progress?.phase === 'downloading' ? `${state.update.progress?.percent || 0}% · ${((state.update.progress?.loaded || 0) / 1048576).toFixed(1)} / ${((state.update.progress?.total || 0) / 1048576).toFixed(1)} MB` : '下载完成，正在处理安装包…'}</span></div>}
                 {state.update?.status === "available" && <button className="button primary" onClick={async () => {
                   const r = await api.installUpdate();
                   if (!r.ok) setToast({text:r.error,error:true});
@@ -1624,6 +1632,17 @@ export default function App() {
                     className={`toggle ${state.settings.idleToys !== false ? "on" : ""}`} disabled={working || !state.settings.idleEnabled}
                     onClick={() => command({ type: "idle-settings", enabled: true, route: state.settings.idleRoute || "line", toys: state.settings.idleToys === false })}><span /></button>
                   <button className="button secondary" onClick={takeBall} disabled={!pet || !state.settings.floating}>拿出玩具球</button>
+                </div>
+                <div className="setting-row">
+                  <div><strong>偶尔看向光标</strong><p>偶尔转转眼睛、偏头看向光标，不移动位置。在猫身上晃几下鼠标，还能逗它追一小会儿。</p></div>
+                  <button className={`toggle ${state.settings.idleMouse !== false ? "on" : ""}`} role="switch" aria-label="偶尔看向光标" aria-checked={state.settings.idleMouse !== false}
+                    onClick={() => command({ type: "idle-settings", enabled: state.settings.idleEnabled === true, route: state.settings.idleRoute || "line", toys: state.settings.idleToys !== false, mouse: state.settings.idleMouse === false })}><span /></button>
+                </div>
+                <div className="setting-row">
+                  <div><strong>低频主动互动</strong><p>偶尔一句短话和小动作，每天最多两次，至少间隔 45 分钟，22:00–08:00 安静。工作、拖动和表演时不打扰；不额外调用模型。</p></div>
+                  <button className={`toggle ${state.settings.companionProactive !== false ? "on" : ""}`} role="switch" aria-label="低频主动互动" aria-checked={state.settings.companionProactive !== false}
+                    onClick={() => command({type:"companion-settings",enabled:state.settings.companionProactive === false})}><span /></button>
+                  <button className="button secondary" disabled={!pet || !state.settings.floating} onClick={async()=>{const r=await api.previewCompanion();if(!r.ok)setToast({text:r.error,error:true});}}>试试打个招呼</button>
                 </div>
                 {state.idle?.reducedMotion && <p className="setting-footnote">系统已开启“减少动态效果”，散步与玩球暂时休息。</p>}
                 <div className="setting-row">

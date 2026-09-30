@@ -1,37 +1,34 @@
-import React, { useEffect, useState } from 'react';
-const api = window.pawprint;
-export default function LocalModels({ state, language, onConfigured }) {
-  const tx = (zh, en) => language === 'en' ? en : zh;
-  const [notice, setNotice] = useState('');
-  useEffect(() => { void api.assistantModelsRefresh(); }, []);
-  if (!state) return null;
-  const busy = ['connecting', 'starting', 'downloading', 'testing'].includes(state.status);
-  const act = async (name, installed) => {
-    setNotice('');
-    const result = await (installed ? api.assistantModelUse(name) : api.assistantModelDownload(name));
-    if (!result.ok) setNotice(result.error);
-    else if (result.data.models.status === 'active') onConfigured(result.data.assistant);
-  };
-  const names = new Set(state.installed.map(m => m.name));
-  const stage = { connecting: tx('正在连接 Ollama…', 'Connecting to Ollama…'), starting: tx('正在启动 Ollama…', 'Starting Ollama…'), downloading: tx('正在下载模型…', 'Downloading model…'), testing: tx('正在试运行，首次加载可能需要一会儿…', 'Testing the model; first load may take a while…'), active: tx('模型已连接，可以直接聊天。', 'Model connected. You can chat now.') }[state.status];
-  const progress = state.progress;
-  return <div className="assistant-guide" data-testid="local-models">
-    <strong>{tx('选择一个模型，下载后自动连接', 'Pick a model; download and connect automatically')}</strong>
-    <p>{tx('模型只在你点击后下载，由 Ollama 管理。无需复制地址或输入命令。', 'Models download only when you click and are managed by Ollama. No commands or copied URLs needed.')}</p>
-    {(state.status === 'missing' || (state.status === 'error' && !state.runtimeInstalled)) && <div><p>{tx('这台电脑尚未检测到 Ollama。首次安装一次，完成后回来点“重新检测”。', 'Ollama was not found. Install it once, then return and click Check again.')}</p><button className="button secondary small" onClick={() => api.assistantHelp('ollama')}>{tx('安装 Ollama（官方）', 'Install Ollama (official)')}</button></div>}
-    {state.status === 'stopped' && <p>{tx('已安装 Ollama；点击模型后会自动启动服务。', 'Ollama is installed. Choosing a model will start its service.')}</p>}
-    <button className="button secondary small" disabled={busy || state.status === 'checking'} onClick={() => api.assistantModelsRefresh()}>{state.status === 'checking' ? tx('正在检测…', 'Checking…') : tx('重新检测', 'Check again')}</button>
-    <div className="model-cards">{state.catalog.map(model => <div className="model-card" key={model.id}>
-      <strong>{model.name}{model.tier === 'balanced' && state.memoryGB >= 16 ? tx(' · 推荐', ' · Recommended') : ''}</strong>
-      <span>{tx(`约 ${model.sizeGB} GB · 建议 ${model.memoryGB} GB 内存`, `About ${model.sizeGB} GB · ${model.memoryGB} GB RAM recommended`)}</span>
-      <p>{model.tier === 'light' ? tx('占用较低，适合先体验。', 'Lower memory use, a lighter starting point.') : model.tier === 'balanced' ? tx('日常中文聊天和工具操作，兼顾速度。', 'Balanced everyday chat and tool use.') : tx('更重视回答质量，加载和回复通常更慢。', 'More emphasis on quality, usually slower to load and reply.')}</p>
-      <button className="button secondary small" disabled={busy || !['ready', 'stopped', 'active', 'error', 'cancelled'].includes(state.status)} onClick={() => act(model.id, names.has(model.id))}>{names.has(model.id) ? tx('使用这个模型', 'Use this model') : tx('下载并使用', 'Download and use')}</button>
-    </div>)}</div>
-    {state.installed.filter(m => !state.catalog.some(c => c.id === m.name)).map(m => <div className="assistant-buttons" key={m.name}><span translate="no">{m.name}</span><button className="button secondary small" disabled={busy} onClick={() => act(m.name, true)}>{tx('使用', 'Use')}</button></div>)}
-    {stage && <strong role="status">{stage} <span translate="no">{state.model}</span></strong>}
-    {busy && <><progress aria-label={tx('模型下载进度', 'Model download progress')} max="100" value={progress?.total ? Math.min(100, progress.completed / progress.total * 100) : undefined} />
-      {progress?.total > 0 && <span>{(progress.completed / 1073741824).toFixed(2)} / {(progress.total / 1073741824).toFixed(2)} GB</span>}
-      <button className="button secondary small" onClick={() => api.assistantModelCancel()}>{tx('取消', 'Cancel')}</button></>}
-    {(notice || state.error) && <p role="alert">{notice || state.error}</p>}
-  </div>;
+import React,{useEffect,useState} from 'react';
+const api=window.pawprint;
+export default function LocalModels({state,language,onConfigured}){
+ const tx=(zh,en)=>language==='en'?en:zh,[notice,setNotice]=useState('');
+ useEffect(()=>{void api.assistantModelsRefresh();},[]);
+ if(!state)return null;
+ const busy=['connecting','preparing-runtime','starting','downloading','testing','removing','checking'].includes(state.status),names=new Set(state.installed.map(m=>m.name));
+ const act=async(name,installed)=>{setNotice('');const r=await(installed?api.assistantModelUse(name):api.assistantModelDownload(name));if(!r.ok)setNotice(r.error);else if(r.data.models.status==='active')onConfigured(r.data.assistant);};
+ const remove=async name=>{setNotice('');if(!window.confirm(tx(`卸载 ${name}？正在使用时会关闭本地助手。宠物、性格和相处记录会保留。`,`Uninstall ${name}? If active, the local assistant will stop. Pets, personality and companion records remain.`)))return;const r=await api.assistantModelRemove(name);if(!r.ok)setNotice(r.error);else if(r.data.error)setNotice(r.data.error);};
+ const title={light:tx('极简','Minimal'),balanced:tx('适合这台电脑','For this computer'),quality:tx('高级','Advanced')};
+ const stage={connecting:tx('正在连接本地引擎…','Connecting to local engine…'),'preparing-runtime':tx('正在自动准备本地引擎…','Preparing the local engine…'),starting:tx('正在启动本地引擎…','Starting the local engine…'),downloading:tx('正在下载模型…','Downloading model…'),testing:tx('正在确认模型可用…','Checking model readiness…'),removing:tx('正在卸载模型…','Uninstalling model…'),active:tx('模型已就绪，可以聊天。','Model ready. You can chat now.')}[state.status];
+ const progress=state.progress;
+ return <div className="assistant-guide" data-testid="local-models">
+  <strong>{tx('三档本地推荐，下载后直接使用','Three local options, ready after download')}</strong>
+  <p>{tx('按语言和内存推荐；只在你点击后下载，不调用付费云端模型。','Recommended by language and memory. Downloads start only when requested; no paid cloud inference.')}</p>
+  <p className="current-local-model" data-testid="current-local-model">{tx('当前使用：','Currently using: ')}<span translate="no">{state.selectedModel?.name||state.currentModel||tx('未选择','None')}</span></p>
+  {state.managed&&!state.runtimeInstalled&&<p>{tx(`首次会自动准备约 ${Math.round((state.runtimeBytes||0)/1000000)} MB 的本地引擎，无需另装软件。`,`The first download prepares a local engine of about ${Math.round((state.runtimeBytes||0)/1000000)} MB. No separate app installation.`)}</p>}
+  {!state.managed&&state.status==='missing'&&<button className="button secondary small" onClick={()=>api.assistantHelp('ollama')}>{tx('安装 Ollama（官方）','Install Ollama (official)')}</button>}
+  <div className="assistant-buttons"><span>{tx(`本机 ${state.memoryGB} GB 内存`,`Device memory: ${state.memoryGB} GB`)}</span><button className="button secondary small" disabled={busy} onClick={()=>api.assistantModelsRefresh(true)}>{tx('刷新推荐与已下载模型','Refresh recommendations and downloads')}</button></div>
+  <div className="model-cards">{state.recommendations.map(m=><div className="model-card" data-tier={m.tier} data-model-id={m.id} key={m.tier}>
+   <strong>{title[m.tier]}{m.tier==='balanced'&&tx(' · 推荐',' · Recommended')}</strong><span translate="no">{m.name}</span>
+   <span>{tx(`约 ${m.sizeGB} GB · 建议 ${m.memoryGB} GB 内存`,`About ${m.sizeGB} GB · ${m.memoryGB} GB RAM recommended`)}</span>
+   <p>{m.tier==='light'?tx('下载小，适合短聊和基础指令。','Small download for short chats and basic commands.'):m.tier==='balanced'?tx('结合这台电脑选择，兼顾聊天、任务和速度。','Chosen for this computer, balancing conversation, tasks and speed.'):tx('能力更强，下载更大、占用更高。','More capable, with a larger download and higher memory use.')}</p>
+   {!m.compatible&&<p>{tx(`至少需要 ${m.minMemoryGB} GB 内存`,`Requires at least ${m.minMemoryGB} GB RAM`)}</p>}
+   {state.currentModel===m.id?<span className="chip">{tx('正在使用','In use')}</span>:<button className="button secondary small" disabled={busy||!m.compatible} onClick={()=>act(m.id,names.has(m.id))}>{names.has(m.id)?tx('使用这个模型','Use this model'):tx('下载并使用','Download and use')}</button>}
+  </div>)}</div>
+  <h4>{tx('已下载模型','Downloaded models')}</h4>
+  {!state.installed.length&&<p>{tx('还没有下载模型。','No models downloaded yet.')}</p>}
+  {state.installed.map(m=><div className="assistant-buttons downloaded-model" key={m.name}><span translate="no">{m.name}</span><span>{(m.size/1073741824).toFixed(2)} GB</span>{state.currentModel===m.name?<span className="chip">{tx('正在使用','In use')}</span>:<button className="button secondary small" disabled={busy} onClick={()=>act(m.name,true)}>{tx('使用','Use')}</button>}<button className="button secondary small" disabled={busy} onClick={()=>remove(m.name)}>{tx('卸载','Uninstall')}</button></div>)}
+  {stage&&<strong role="status">{stage} <span translate="no">{state.model}</span></strong>}
+  {busy&&state.status!=='checking'&&<><progress aria-label={tx('模型下载进度','Model download progress')} max="100" value={progress?.total?Math.min(100,progress.completed/progress.total*100):undefined}/>{progress?.total>0&&<span>{Math.round(progress.completed/progress.total*100)}% · {(progress.completed/1073741824).toFixed(2)} / {(progress.total/1073741824).toFixed(2)} GB</span>}<button className="button secondary small" disabled={state.status==='removing'} onClick={()=>api.assistantModelCancel()}>{tx('取消','Cancel')}</button></>}
+  {(notice||state.error)&&<p role="alert">{notice||state.error}</p>}
+ </div>;
 }

@@ -36,7 +36,7 @@ test('using an installed model skips download and respects a concurrent settings
     if (url.endsWith('/api/tags')) return json({ models: [{ name: 'my-model', size: 100 }] });
     assert.ok(url.endsWith('/api/generate')); return json({ response: 'OK' });
   } });
-  assert.equal((await manager.use('my-model')).status, 'ready'); assert.match(manager.snapshot().error, /修改了设置/);
+  assert.equal((await manager.use('my-model')).status, 'ready'); assert.match(manager.snapshot().error, /尚未切换/);
 });
 test('cancel aborts a pull and never changes the configured provider', async () => {
   let started;
@@ -47,4 +47,15 @@ test('cancel aborts a pull and never changes the configured provider', async () 
   } });
   const pending = manager.download('qwen3:8b'); await ready; manager.cancel();
   assert.equal((await pending).status, 'cancelled');
+});
+test('uninstall unloads only the selected model and clears active selection after confirmed deletion',async()=>{
+ let installed=true,active='qwen3:8b';const calls=[];
+ const manager=new OllamaModels({getActive:()=>active,onRemove:async()=>{active=null;},fetcher:async(url,init)=>{
+  calls.push([url,init?.method]);if(url.endsWith('/api/tags'))return json({models:installed?[{name:'qwen3:8b',size:100}]:[]});
+  if(url.endsWith('/api/generate')){assert.equal(JSON.parse(init.body).keep_alive,0);return json({done:true});}
+  assert.equal(init.method,'DELETE');assert.deepEqual(JSON.parse(init.body),{model:'qwen3:8b'});installed=false;return new Response('');
+ }});await manager.refresh();assert.equal(manager.snapshot().currentModel,active);await manager.remove(active);assert.equal(manager.snapshot().currentModel,null);assert.equal(manager.snapshot().installed.length,0);assert.equal(calls.filter(c=>c[1]==='DELETE').length,1);
+});
+test('multi-layer progress retains completed bytes when metadata records arrive',async()=>{
+ const manager=new OllamaModels({fetcher:async()=>new Response('{"digest":"a","total":100,"completed":100}\n{"digest":"b","total":50,"completed":50}\n{"status":"success"}\n')});await manager.pull('example',new AbortController());assert.equal(manager.snapshot().progress.total,150);assert.equal(manager.snapshot().progress.completed,150);
 });

@@ -29,7 +29,7 @@ export default function TalentRoom({
   const owns = s => !!pet && (s.category === "talent" ? pet.talent.id === s.id : s.category === "gift" || Object.values(petSkills(pet)).includes(s.id));
   const catalogs = [
     { name: "出生才艺池", note: "初代抽一项 · 繁育 70% 继承、30% 随机", pool: TALENTS.map(s => ({ ...s, category: "talent" })) },
-    { name: "待机技能池", note: "玩球默认掌握；其余技能初代抽一项", pool: [...GIFT_SKILLS, ...IDLE_SKILLS] },
+    { name: "待机技能池", note: "日常小本领默认掌握；出生待机技能初代抽一项", pool: [...GIFT_SKILLS, ...IDLE_SKILLS] },
     { name: "社交技能池", note: "初代抽一项 · 繁育 70% 继承、30% 随机", pool: SOCIAL_SKILLS },
   ];
   return (
@@ -38,7 +38,7 @@ export default function TalentRoom({
         <div>
           <span className="eyebrow">A LITTLE SHOW, JUST FOR YOU</span>
           <h2>看看它会哪些小本领。</h2>
-          <p>技能池会标记当前伙伴已拥有的技能。玩球默认掌握，其他本领在蛋生成时固定，升级和重启不重抽。</p>
+          <p>日常小本领每只猫都会；出生技能和才艺仍在蛋生成时固定。已掌握的本领会偶尔自然发生，也可以点名表演。</p>
         </div>
         <Music size={36} />
       </section>

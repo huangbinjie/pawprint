@@ -15,6 +15,12 @@ test('assistant is opt-in; provider setup, per-pet character, tool execution and
   let app;
   try {
     app = await electron.launch({ args: ['.'], env });
+    // Test the missing-runtime guidance deterministically, regardless of local Ollama installation.
+    await app.evaluate(({app})=>{
+      const path=process.getBuiltinModule('path'),req=process.getBuiltinModule('module').createRequire(path.join(app.getAppPath(),'package.json'));
+      const {OllamaModels}=req('./electron/assistant/ollama.mjs');
+      OllamaModels.prototype.refresh=async function(){this.binary=null;return this.set({status:'missing',running:false,installed:[],error:null});};
+    });
     let home = await openHome(app, 'settings');
     const panel = home.getByTestId('assistant-settings');
     await expect(panel.getByLabel('开启宠物助手')).not.toBeChecked();
@@ -23,6 +29,7 @@ test('assistant is opt-in; provider setup, per-pet character, tool execution and
     await expect(panel.getByLabel('启用本地语音唤醒')).toHaveCount(0);
     expect(await home.evaluate(() => Object.keys(window.pawprint).filter(k => /assistant(Voice|Audio|Listen|Prepare)/.test(k)))).toEqual([]);
     await app.evaluate(({ shell }) => { shell.openExternal = async url => { globalThis.assistantOpenedURL = url; }; });
+    await panel.getByText('其他模型来源（高级）',{exact:true}).click();
     await panel.getByRole('button', { name: 'Ollama', exact: true }).click();
     await expect(panel.locator('.model-card')).toHaveCount(3);
     await panel.getByRole('button', { name: '安装 Ollama（官方）', exact: true }).click();
@@ -44,6 +51,7 @@ test('assistant is opt-in; provider setup, per-pet character, tool execution and
     await panel.getByRole('button', { name: '发送指令' }).click();
     await expect(panel.locator('.assistant-reply')).toHaveText('喵，我是松露。');
     expect(requests[0].messages[0].content).toContain('独立又傲娇');
+    await expect.poll(async()=>{const state=(await home.evaluate(()=>window.pawprint.getState())).data;return state.pets.find(p=>p.id===state.activePetId).companion?.counts.chat;}).toBe(1);
     await app.evaluate(({ shell }) => { shell.openExternal = async url => { globalThis.assistantOpenedURL = url; }; });
     await panel.getByLabel('输入指令').fill('Hi，松露，帮我打开推特');
     await panel.getByRole('button', { name: '发送指令' }).click();
@@ -70,14 +78,16 @@ test('assistant is opt-in; provider setup, per-pet character, tool execution and
 });
 
 test('a catalog download streams progress, tests the model and configures chat without manual fields', async ({}, info) => {
-  const profile = await mkdtemp(path.join(os.tmpdir(), 'paw-model-catalog-')); await seedMatureCompanion(profile);
-  let downloaded = false, pulls = 0;
+  const profile = await mkdtemp(path.join(os.tmpdir(), 'paw-model-catalog-')); const state=await seedMatureCompanion(profile);
+  let downloaded = false, pulls = 0, downloadedModel;
   const server = http.createServer((req, res) => {
     let body = ''; req.on('data', c => body += c); req.on('end', () => {
       res.setHeader('Content-Type', 'application/json');
-      if (req.url === '/api/tags') return res.end(JSON.stringify({ models: downloaded ? [{ name: 'qwen3:8b', size: 100 }] : [] }));
-      if (req.url === '/api/pull') { pulls++; res.write('{"status":"pulling","total":100,"completed":50}\n'); setTimeout(() => { downloaded = true; res.end('{"status":"success"}\n'); }, 1000); return; }
+      if (req.url === '/api/tags') return res.end(JSON.stringify({ models: downloaded ? [{ name: downloadedModel, size: 100 }] : [] }));
+      if (req.url === '/api/pull') { downloadedModel=JSON.parse(body).model;pulls++; res.write('{"status":"pulling","total":100,"completed":50}\n'); setTimeout(() => { downloaded = true; res.end('{"status":"success"}\n'); }, 1000); return; }
+      if (req.url === '/api/delete' && req.method==='DELETE'){downloaded=false;return res.end('{}');}
       if (req.url === '/api/generate') return res.end('{"response":"OK"}');
+      if (req.url === '/api/chat') return res.end(JSON.stringify({message:{role:'assistant',content:'模型连接成功。'}}));
       if (req.url === '/v1/chat/completions') return res.end(JSON.stringify({ choices: [{ message: { content: '模型连接成功。' } }] }));
       res.writeHead(404); res.end();
     });
@@ -87,17 +97,24 @@ test('a catalog download streams progress, tests the model and configures chat w
   const app = await electron.launch({ args: ['.'], env: { ...process.env, PAWPRINT_TEST_MODE: '1', PAWPRINT_TEST_DATA: profile, PAWPRINT_TEST_LAN: '1', PAWPRINT_TEST_CODEX_HOME: path.join(profile, 'codex'), PAWPRINT_TEST_OLLAMA_URL: base } });
   try {
     const home = await openHome(app, 'settings'), panel = home.getByTestId('assistant-settings');
+    await panel.getByText('其他模型来源（高级）',{exact:true}).click();
     await panel.getByRole('button', { name: 'Ollama', exact: true }).click();
-    const card = panel.locator('.model-card').filter({ hasText: 'Qwen3 8B' });
+    const card = panel.locator('.model-card[data-tier="balanced"]');const selected=await card.getAttribute('data-model-id');
     await card.getByRole('button', { name: '下载并使用', exact: true }).click();
     await expect(panel.getByRole('progressbar', { name: '模型下载进度' })).toBeVisible();
     await expect(panel.getByText('模型已就绪，已自动保存连接，可以聊天了。')).toBeVisible();
     const state = (await home.evaluate(() => window.pawprint.getState())).data;
-    expect(state.assistant.enabled).toBe(true); expect(state.assistant.model).toBe('qwen3:8b'); expect(state.assistant.baseURL).toBe(base + '/v1');
+    expect(state.assistant.enabled).toBe(true); expect(state.assistant.model).toBe(selected); expect(state.assistant.baseURL).toBe(base + '/v1');
     await panel.getByLabel('输入指令').fill('你好'); await panel.getByRole('button', { name: '发送指令', exact: true }).click();
     await expect(panel.locator('.assistant-reply')).toHaveText('模型连接成功。');
-    await card.getByRole('button', { name: '使用这个模型', exact: true }).click();
-    await expect(panel.getByText('模型已就绪，已自动保存连接，可以聊天了。')).toBeVisible(); expect(pulls).toBe(1);
+    await expect(card.getByText('正在使用',{exact:true})).toBeVisible();
+    expect(pulls).toBe(1);await expect(panel.getByTestId('current-local-model')).toContainText(selected);
     await panel.getByTestId('local-models').screenshot({ path: info.outputPath('model-catalog.png') });
+    home.once('dialog',dialog=>dialog.accept());
+    await panel.locator('.downloaded-model').getByRole('button',{name:'卸载',exact:true}).click();
+    await expect(panel.locator('.downloaded-model')).toHaveCount(0);
+    await expect(panel.getByTestId('current-local-model')).toContainText('未选择');
+    const removed=(await home.evaluate(()=>window.pawprint.getState())).data;expect(removed.assistant.enabled).toBe(false);expect(removed.pets).toHaveLength(state.pets.length);
+
   } finally { await app.close(); await new Promise(r => server.close(r)); }
 });

@@ -47,7 +47,7 @@ test('installer swaps only after old process exits and restores on failure',{ski
  const script=path.resolve('electron/install-update.sh');
  await run('/bin/sh',[script,current,ready,staging,'99999999'],{env:{...process.env,PAWPRINT_TEST_INSTALL_NO_OPEN:'1'}});
  assert.equal((await stat(path.join(current,'new'))).isFile(),true);
- await mkdir(ready);await writeFile(path.join(ready,'next'),'next');
+ await mkdir(staging);await mkdir(ready);await writeFile(path.join(ready,'next'),'next');
  await run('/bin/sh',[script,current,ready,staging,'99999999'],{env:{...process.env,PAWPRINT_TEST_INSTALL_NO_OPEN:'1'}});
  assert.equal((await stat(path.join(current,'next'))).isFile(),true);
  assert.equal((await stat(path.join(`${current}.previous`,'new'))).isFile(),true);
@@ -85,4 +85,26 @@ test('automatic and manual update checks share an in-flight check instead of ove
  const pending=updates.check();
  assert.equal((await updates.check()).status,'checking');assert.equal(requests,1);
  resolve(new Response(JSON.stringify(release)));assert.equal((await pending).status,'available');
+});
+test('download progress and processing phases reach renderer snapshots before quit', async()=>{
+ const states=[];
+ const updates=new UpdateService({installed:'0.11.2',platform:'darwin',arch:'arm64',fetcher:async()=>new Response(JSON.stringify(release)),
+  stage:async(_release,_app,{onProgress})=>{onProgress({loaded:60000,total:120000,percent:50});onProgress({phase:'verifying',percent:100});onProgress({phase:'extracting'});onProgress({phase:'preparing'});return {ready:'ready',root:'root'};},
+  install:async()=>{throw new Error('helper failed');},quit:()=>assert.fail('Quit on helper failure'),onChange:state=>states.push(state)});
+ await updates.check();await updates.installLatest();
+ assert.equal(states.find(s=>s.progress?.percent===50).progress.loaded,60000);
+ assert.deepEqual(states.filter(s=>s.status==='downloading').map(s=>s.progress.phase),['downloading','downloading','verifying','extracting','preparing']);
+ assert.equal(updates.snapshot().status,'error');
+});
+test('Mac update rejects disk images and translocated apps before downloading', async()=>{
+ const {assertMacUpdateLocation}=await import('../electron/updater.mjs');
+ await assert.rejects(()=>assertMacUpdateLocation('/Volumes/Pawprint/Pawprint.app'),/应用程序/);
+ await assert.rejects(()=>assertMacUpdateLocation('/private/var/AppTranslocation/random/d/Pawprint.app'),/应用程序/);
+ await assert.rejects(()=>assertMacUpdateLocation('/missing-pawprint-dir/Pawprint.app'),/权限/);
+});
+test('Mac helper launch failure does not report readiness', {skip:process.platform==='win32'}, async()=>{
+ const {launchInstaller}=await import('../electron/updater.mjs');
+ const dir=await mkdtemp(path.join(tmpdir(),'pawprint-helper-test-'));
+ const current=path.join(dir,'Pawprint.app');await mkdir(current);
+ await assert.rejects(()=>launchInstaller(current,path.join(dir,'missing.app'),dir,process.pid,{scriptPath:path.resolve('electron/install-update.sh')}),/辅助进程启动失败/);
 });

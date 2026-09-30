@@ -7,18 +7,19 @@ $parentId = [int]$env:PAWPRINT_UPDATE_PID
 $log = Join-Path $root 'install.log'
 function Log([string]$message) { Add-Content -LiteralPath $log -Value $message }
 try {
-  [IO.File]::WriteAllText((Join-Path $root 'helper.ready'), 'ready')
   Log 'Pawprint update helper started'
   if (!(Test-Path -LiteralPath $installer -PathType Leaf) -or $expected -notmatch '^[a-f0-9]{64}$') { throw 'Invalid update package' }
-  Log 'Waiting for the old process to exit'
-  $parentProcess = Get-Process -Id $parentId -ErrorAction SilentlyContinue
-  if ($parentProcess -and !$parentProcess.WaitForExit(120000)) { throw 'Pawprint did not exit in time' }
   Log 'Verifying installer checksum'
   $stream = [IO.File]::OpenRead($installer)
   $hasher = [Security.Cryptography.SHA256]::Create()
   try { $actual = [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
   finally { $stream.Dispose(); $hasher.Dispose() }
   if ($actual -ne $expected) { throw 'Update checksum changed' }
+  # Report readiness only after validating the package; the app can now quit.
+  [IO.File]::WriteAllText((Join-Path $root 'helper.ready'), 'ready')
+  Log 'Waiting for the old process to exit'
+  $parentProcess = Get-Process -Id $parentId -ErrorAction SilentlyContinue
+  if ($parentProcess -and !$parentProcess.WaitForExit(120000)) { throw 'Pawprint did not exit in time' }
   # Start-Process invokes the installer directly. /D must be the last NSIS argument,
   # with no embedded quotes even when the install directory contains spaces.
   $arguments = '/S --updated --force-run /D=' + [IO.Path]::GetDirectoryName($current)
@@ -35,6 +36,6 @@ try {
 } catch {
   Log $_.Exception.Message
   # Keep the verified installer and log for retry. Restore the old app if possible.
-  if (Test-Path -LiteralPath $current) { Start-Process -FilePath $current }
+  if (!(Get-Process -Id $parentId -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $current)) { Start-Process -FilePath $current }
   exit 1
 }

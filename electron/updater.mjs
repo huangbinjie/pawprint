@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { createWriteStream, createReadStream, openSync, closeSync } from 'node:fs';
+import { constants, createWriteStream, createReadStream, openSync, closeSync } from 'node:fs';
 import { mkdtemp, rm, stat, lstat, readFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -69,10 +69,21 @@ export async function verifiedDownload(release, directory, fetcher=fetch, onProg
   await pipeline(Readable.fromWeb(r.body),meter,createWriteStream(target,{flags:'wx'}));
   const size=(await stat(target)).size;
   if(size!==release.size) throw new Error('安装包大小与发布记录不一致。');
+  onProgress({loaded,total:release.size,percent:100,phase:'verifying'});
   const hash=createHash('sha256');
   for await(const chunk of createReadStream(target)) hash.update(chunk);
   if(hash.digest('hex')!==expected) throw new Error('安装包校验失败。');
   return target;
+}
+export async function assertMacUpdateLocation(currentApp) {
+  if (/\/AppTranslocation\/|\/Volumes\//.test(currentApp)) throw new Error('请先退出 Pawprint，将应用拖到「应用程序」文件夹，再从那里打开后更新。');
+  try {
+    await access(path.dirname(currentApp), constants.W_OK | constants.X_OK);
+    await access(currentApp, constants.W_OK | constants.X_OK);
+    const backup = currentApp + '.previous';
+    try { await lstat(backup); } catch (error) { if (error.code === 'ENOENT') return; throw error; }
+    await access(backup, constants.W_OK | constants.X_OK);
+  } catch { throw new Error('当前安装位置没有更新权限。请用 Finder 手动替换应用，或安装到你自己的 ~/Applications 文件夹后重试。'); }
 }
 async function bundleValue(appPath,key) {
   const {stdout}=await run('/usr/libexec/PlistBuddy',['-c',`Print ${key}`,path.join(appPath,'Contents/Info.plist')],{timeout:10_000});
@@ -80,23 +91,28 @@ async function bundleValue(appPath,key) {
 }
 export async function stageUpdate(release,currentApp,{fetcher=fetch,workArea=tmpdir(),onProgress=()=>{}}={}) {
   if(process.platform!=='darwin') throw new Error('目前只支持 Apple 芯片 Mac 更新。');
+  await assertMacUpdateLocation(currentApp);
   const root=await mkdtemp(path.join(workArea,'pawprint-update-'));
+  let ready;
   const staged=path.join(root,'Pawprint.app');
   try{
     const archive=await verifiedDownload(release,root,fetcher,onProgress);
+    onProgress({phase:'extracting'});
     await run('/usr/bin/ditto',['-x','-k',archive,root],{timeout:180_000});
     if(!(await lstat(staged)).isDirectory()) throw new Error('安装包缺少 Pawprint.app。');
     if(await bundleValue(staged,'CFBundleIdentifier')!=='studio.binmax.pawprint') throw new Error('安装包应用标识不匹配。');
     if(await bundleValue(staged,'CFBundleShortVersionString')!==release.version) throw new Error('安装包版本不匹配。');
-    const ready=path.join(path.dirname(currentApp),`.Pawprint-new-${randomUUID()}.app`);
+    onProgress({phase:'preparing'});
+    ready=path.join(path.dirname(currentApp),`.Pawprint-new-${randomUUID()}.app`);
     await run('/usr/bin/ditto',[staged,ready],{timeout:180_000});
     return {root,ready};
-  }catch(e){await rm(root,{recursive:true,force:true});throw e}
+  }catch(e){if(ready) await rm(ready,{recursive:true,force:true});await rm(root,{recursive:true,force:true});throw e}
 }
 export async function stageWindowsUpdate(release,_currentApp,{fetcher=fetch,workArea=tmpdir(),onProgress=()=>{}}={}) {
   const root=await mkdtemp(path.join(workArea,'pawprint-update-'));
   try {
     const ready=await verifiedDownload(release,root,fetcher,onProgress);
+    onProgress({phase:'preparing'});
     const hash=createHash('sha256');
     for await(const chunk of createReadStream(ready)) hash.update(chunk);
     return {root,ready,sha256:hash.digest('hex')};
@@ -108,9 +124,18 @@ function detached(command,args,options={}) {
     child.once('error',reject);child.once('spawn',()=>{child.unref();resolve(child);});
   });
 }
-export function launchInstaller(currentApp,ready,root,pid) {
-  const script=path.join(process.resourcesPath,'updater/install-update.sh');
-  return detached('/bin/sh',[script,currentApp,ready,root,String(pid)]);
+export async function launchInstaller(currentApp,ready,root,pid,{scriptPath=path.join(process.resourcesPath,'updater/install-update.sh')}={}) {
+  await assertMacUpdateLocation(currentApp);
+  const log=openSync(root+'.log','a');
+  try {
+    const child=await detached('/bin/sh',[scriptPath,currentApp,ready,root,String(pid)],{stdio:['ignore',log,log]});
+    for(let attempt=0;attempt<100;attempt++) {
+      try { await access(path.join(root,'helper.ready'));return; } catch {}
+      if(child.exitCode!==null || child.signalCode!==null) throw new Error('Mac 更新辅助进程启动失败，应用没有退出。日志：'+root+'.log');
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    child.kill();throw new Error('Mac 更新辅助进程未就绪，应用没有退出。');
+  } finally { closeSync(log); }
 }
 export async function launchWindowsInstaller(currentApp,ready,root,pid,sha256,{scriptPath=path.join(process.resourcesPath,'updater/install-update.ps1')}={}) {
   const script=await readFile(scriptPath,'utf8');
@@ -124,7 +149,7 @@ export async function launchWindowsInstaller(currentApp,ready,root,pid,sha256,{s
     const child=await detached(executable,['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(bootstrap,'utf16le').toString('base64')],{detached:false,windowsHide:true,stdio:['ignore',log,log],env:{...process.env,
       PAWPRINT_UPDATE_POWERSHELL:executable,PAWPRINT_UPDATE_SCRIPT:Buffer.from(script,'utf16le').toString('base64'),PAWPRINT_UPDATE_INSTALLER:ready,PAWPRINT_UPDATE_CURRENT:currentApp,PAWPRINT_UPDATE_ROOT:root,PAWPRINT_UPDATE_PID:String(pid),PAWPRINT_UPDATE_SHA256:sha256}});
     let started=false;
-    for(let attempt=0;attempt<100;attempt++) {
+    for(let attempt=0;attempt<600;attempt++) {
       try { await access(path.join(root,'helper.ready'));started=true;break; } catch {}
       if((child.exitCode!==null && child.exitCode!==0) || child.signalCode!==null) throw new Error('Windows 更新辅助进程启动失败（'+child.exitCode+'/'+child.signalCode+'），请查看 '+root+'.log');
       await new Promise(resolve=>setTimeout(resolve,100));
@@ -156,8 +181,8 @@ export class UpdateService {
   async installLatest(){
     const release=this.state.release;
     if(this.state.status!=='available'||!release) throw new Error('请先检查新版本。');
-    this.set({status:'downloading',error:null,progress:{loaded:0,total:release.size,percent:0}});
-    try{const staged=await this.stage(release,this.appPath,{fetcher:this.fetcher,onProgress:progress=>{if(!this.lastProgress || Date.now()-this.lastProgress>200 || progress.percent===100){this.lastProgress=Date.now();this.set({progress});}}});
+    this.set({status:'downloading',error:null,progress:{loaded:0,total:release.size,percent:0,phase:'downloading'}});
+    try{const staged=await this.stage(release,this.appPath,{fetcher:this.fetcher,onProgress:progress=>{if(progress.phase || !this.lastProgress || Date.now()-this.lastProgress>200 || progress.percent===100){this.lastProgress=Date.now();this.set({progress:{...this.state.progress,...progress}});}}});
       this.set({status:'installing'});
       await this.install(this.appPath,staged.ready,staged.root,process.pid,staged.sha256);
       this.quit();return this.snapshot();

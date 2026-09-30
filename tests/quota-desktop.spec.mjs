@@ -14,8 +14,8 @@ test("owned badges are in pools and real native tray titles follow remaining quo
   const app = await electron.launch({ args: ["."], env: { ...process.env, PAWPRINT_TEST_MODE: "1", PAWPRINT_TEST_DATA: profile, PAWPRINT_TEST_CODEX_HOME: codex, PAWPRINT_TEST_LAN: "1" } });
   try {
     const home = await openHome(app, "talents");
-    await expect(home.locator(".skill-card")).toHaveCount(17);
-    await expect(home.locator(".skill-owned-badge")).toHaveCount(4);
+    await expect(home.locator(".skill-card")).toHaveCount(23);
+    await expect(home.locator(".skill-owned-badge")).toHaveCount(10);
     await expect(home.locator('[data-skill-id="ball"]')).toContainText("已拥有");
     await expect(home.getByRole("heading", { name: "赠送技能", exact: true })).toHaveCount(0);
     await expect(home.locator(".owned-skills")).toHaveCount(0);

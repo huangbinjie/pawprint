@@ -275,6 +275,7 @@ export default function Cat({
           <g
             transform={`translate(139 139) scale(${face.sx} ${face.sy}) translate(-139 -139)`}
           >
+            <g className="cat-head-motion">
             {!noEars && [0, 1].map(i => <g key={i} className={`gentle-ear gentle-ear-${i}`} data-part="ear" style={{ transformOrigin: `${i ? 188 : 87}px 108px` }}>
               {p.ears === 1
                 ? <ellipse cx={i ? 192 : 83} cy={i ? 90 : 91} rx="29" ry="30" fill={coat.color} />
@@ -335,6 +336,7 @@ export default function Cat({
                     transform={`scale(${eye.scale * (eye.sx || 1)} ${eye.scale * (eye.sy || 1)})`}
                   >
                     <ellipse rx="13" ry="16" fill="#FDFCF5" />
+                    <g className="cat-gaze">
                     <ellipse
                       rx="9"
                       ry="12"
@@ -346,6 +348,7 @@ export default function Cat({
                       fill="#33352F"
                     />
                     <circle cx="-3" cy="-6" r="3.4" fill="white" />
+                    </g>
                     {[1, 3, 5].includes(p.expression) && (
                       <path
                         d={
@@ -424,6 +427,7 @@ export default function Cat({
               fill="none"
               opacity=".6"
             />
+            </g>
           </g>
           <g
             fill={p.white === 1 ? "#F7F2E6" : coat.color}

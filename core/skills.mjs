@@ -1,5 +1,13 @@
 export const SKILL_VERSION = 1;
-export const GIFT_SKILLS = [{ id: "ball", name: "拨弄玩具球", weight: 100, category: "gift", description: "每位伙伴都能得到的小礼物，轻轻拨球，看它滚回来。" }];
+export const GIFT_SKILLS = [
+  { id: "ball", name: "拨弄玩具球", description: "每位伙伴都能得到的小礼物，轻轻拨球，看它滚回来。" },
+  { id: "mouse", name: "追一下鼠标", description: "在猫身上来回晃几下光标，它会盯住你，再跟随一小会儿。也可以点这里试试追逐。" },
+  { id: "peek", name: "屏幕边缘探头", description: "走到屏幕侧边，藏起半张脸，偷偷看看你，再探出来。" },
+  { id: "toyroll", name: "玩具滚出来了", description: "小球突然滚出来，先看一眼，再伸爪拨回去。" },
+  { id: "observe", name: "注意到什么", description: "停下来偏偏头，耳朵动一下，再继续陪你。" },
+  { id: "doze", name: "迷糊打瞌睡", description: "眼睛慢慢合上，头轻轻点一下，又醒过来。" },
+  { id: "wash", name: "日常洗脸", description: "所有猫都会的短版洗脸；认真洗脸是更完整的出生技能。" },
+].map(s => ({ ...s, weight: 100, category: "gift" }));
 export const IDLE_SKILLS = [
   { id: "groom", name: "认真洗脸", weight: 45, category: "idle", description: "舔舔爪，揉揉脸，把毛毛整理好。" },
   { id: "chase", name: "追自己的尾巴", weight: 35, category: "idle", description: "发现身后的小尾巴，忍不住追着转。" },
@@ -36,7 +44,7 @@ export function legacySkills(pet) {
 }
 export const validSkills = value => !!value && IDLE_SKILLS.some(s => s.id === value.idle) && SOCIAL_SKILLS.some(s => s.id === value.social) && Object.keys(value).length === 2;
 export const petSkills = pet => pet.skills ?? legacySkills(pet);
-export const ownsSkill = (pet, id) => id === "ball" || Object.values(petSkills(pet)).includes(id);
+export const ownsSkill = (pet, id) => GIFT_SKILLS.some(s => s.id === id) || Object.values(petSkills(pet)).includes(id);
 export function skillOdds(category, a, b) {
   return poolFor(category).map(s => ({ ...s, percent: a && b ? s.weight * .3 + (a[category] === s.id ? 35 : 0) + (b[category] === s.id ? 35 : 0) : s.weight }));
 }

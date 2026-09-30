@@ -1,3 +1,4 @@
+import { recordInteraction } from "./personality.mjs";
 import { entry } from "./ledger.mjs";
 import { IDLE_ROUTES } from "./idle.mjs";
 import { drawSkills, petSkills } from "./skills.mjs";
@@ -205,6 +206,26 @@ export function transition(current, command, { now, rng, id }) {
     case "visit":
       recordCompanionDay(state, now);
       break;
+    case "pet-interact": {
+      const pet = housePets(state).find(p => p.id === command.petId);
+      if (!pet) throw new Error("请先选择一位小屋伙伴。");
+      recordInteraction(pet, command.kind, now);
+      recordCompanionDay(state, now);
+      break;
+    }
+    case "companion-settings":
+      if (typeof command.enabled !== "boolean") throw new Error("请选择有效的主动互动设置。");
+      state.settings.companionProactive = command.enabled;
+      break;
+    case "_companion-note": {
+      const date = dayKey(now), previous = state.companionNotes;
+      const pet = housePets(state).find(p => p.id === command.petId);
+      if (!pet || state.activePetId !== pet.id || state.settings.companionProactive === false) throw new Error("主动互动已暂停。");
+      const count = previous?.date === date ? previous.count : 0;
+      if (count >= 2 || (previous && now - previous.lastAt < 45 * 60000)) throw new Error("让伙伴安静陪你一会儿。");
+      state.companionNotes = { date, count: count + 1, lastAt: now };
+      break;
+    }
     case "garden": {
       const pet = state.pets.find((p) => p.id === command.petId);
       if (!pet || pet.residence === "garden")
@@ -257,6 +278,8 @@ export function transition(current, command, { now, rng, id }) {
     case "idle-settings":
       if (typeof command.enabled !== "boolean" || typeof command.toys !== "boolean" || !IDLE_ROUTES.includes(command.route))
         throw new Error("请选择有效的待机玩法。");
+      if (command.mouse !== undefined && typeof command.mouse !== "boolean") throw new Error("请选择有效的鼠标互动设置。");
+      if (command.mouse !== undefined) state.settings.idleMouse = command.mouse;
       state.settings.idleEnabled = command.enabled;
       state.settings.idleRoute = command.route;
       state.settings.idleToys = command.toys;

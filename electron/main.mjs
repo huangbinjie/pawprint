@@ -1,7 +1,13 @@
+import QRCode from 'qrcode';
+import {encodePetCard,decodePetCard} from '../core/pet-card.mjs';
 import { OllamaModels } from './assistant/ollama.mjs';
 import { ASSISTANT_LINKS } from '../core/assistant.mjs';
 import { AssistantService } from "./assistant/service.mjs";
 import { ActivityBubble } from "./activity-bubble.mjs";
+import { companionPersonality, companionLine, CompanionInitiative } from "../core/personality.mjs";
+import { CursorAttention, CursorTease } from "../core/attention.mjs";
+import { ModelCatalog } from './assistant/catalog.mjs';
+import { ManagedRuntime } from './assistant/runtime.mjs';
 import { UpdateService } from "./updater.mjs";
 import { LanService } from "./lan/service.mjs";
 import { CodexActivity } from "./activity.mjs";
@@ -10,7 +16,7 @@ import { quotaPresentation } from "../core/quota.mjs";
 import { translateText, translateMenu, formatText } from "../core/i18n.mjs";
 import { IdleDirector, restingPose } from "../core/idle.mjs";
 import { talentById } from "../core/talents.mjs";
-import { skillById, ownsSkill, petSkills, socialCast } from "../core/skills.mjs";
+import { GIFT_SKILLS, skillById, ownsSkill, petSkills, socialCast } from "../core/skills.mjs";
 import {
   app,
   safeStorage,
@@ -23,6 +29,7 @@ import {
   Menu,
   nativeImage,
   clipboard,
+  ClipboardItem,
   Notification,
   systemPreferences,
   powerMonitor,
@@ -68,6 +75,7 @@ let activity, lastActivityEvent, quota, assistant, localModels;
 let updateNoticeVersion;
 const assistantBubble = new ActivityBubble();
 let assistantBubbleTimer;
+let companionBubbleActive = false;
 let trayImage, trayWatch, trayRecoveries = 0, trayLastReason = "startup";
 const TRAY_GUID = "22e5b352-a013-4f52-86fb-68ce83b3b386";
 const language = () => store?.state?.settings?.language === "en" ? "en" : "zh";
@@ -76,10 +84,17 @@ const buildMenu = items => Menu.buildFromTemplate(translateMenu(items, language(
 let previewScale = null, socialPerformance = null, socialTimer;
 const desktopScale = () => previewScale ?? petScale(store?.state.settings);
 const desktopSize = (width = FLOAT_SIZE.width) => scaledFloatSize(desktopScale(), width);
+const companionInitiative = new CompanionInitiative();
+let initiativePending = false;
+const cursorAttention = new CursorAttention();
+const cursorTease = new CursorTease();
 const idleDirector = new IdleDirector({ random: test ? () => 0.8 : Math.random });
 let idleVisual = restingPose(), idleTimer, idleTargetPosition;
 let idlePausedUntil = 0, idleMenuOpen = false, reducedMotion = false, motionCheckedAt = 0, screenLocked = false, suspended = false;
 const guestWindows = new Map();
+let cardVisitors = [];
+const allVisitors = () => [...(lan?.snapshot().visitors || []), ...cardVisitors.filter(v => v.expiresAt > Date.now())];
+function dismissCardVisitor(id) { cardVisitors = cardVisitors.filter(v => v.id !== id); syncGuests(); broadcast(); }
 let previousInvites = new Set();
 const execute = promisify(execFile);
 let queue = Promise.resolve();
@@ -103,6 +118,7 @@ function snapshot() {
     trayStatus: trayStatus(),
     update: updates?.snapshot() ?? { status: "idle", release: null, error: null },
     quota: quota?.snapshot() ?? { enabled: false, loading: false, data: null, error: null },
+    cardVisitors: cardVisitors.filter(v => v.expiresAt > Date.now()),
     displayScale: desktopScale(),
     socialPerformance,
     idle: idleVisual,
@@ -211,6 +227,7 @@ async function openClient() {
 }
 function showAssistantReply(result) {
   if (result?.text && floating && !floating.isDestroyed() && floating.isVisible()) {
+    companionBubbleActive = false;
     assistantBubble.update({ pet: floating.getBounds(), event: { at: Date.now(), text: result.text.slice(0, 65) }, subtitle: assistant.getPet()?.name });
     clearTimeout(assistantBubbleTimer); assistantBubbleTimer = setTimeout(() => assistantBubble.hide(), 8000);
   }
@@ -268,7 +285,10 @@ function menuTemplate() {
     { label: "用量与钱包", click: () => createHome("usage") },
     { label: "基因图鉴与获取概率", click: () => createHome("genes") },
     { label: "去后花园看看", click: () => createHome("garden") },
+    { label: "二维码宠物访问卡", click: () => createHome("nearby") },
     { label: "附近的小屋", click: () => createHome("nearby") },
+    { label: "日常小本领", enabled: !!pet, submenu: [...GIFT_SKILLS, ...(pet ? [skillById(petSkills(pet).idle)] : [])].filter(Boolean).map(s => ({ label: s.name,
+      enabled: !!pet, click: () => menuAction(() => performSkill(pet.id, s.id)) })) },
     { label: "拿出玩具球", enabled: !!pet, click: () => menuAction(playBall) },
     { label: "待机散步", type: "checkbox", checked: store.state.settings.idleEnabled === true,
       click: () => menuAction(() => enqueue(() => mutate({ type: "idle-settings", enabled: !store.state.settings.idleEnabled,
@@ -483,6 +503,9 @@ async function mutate(command) {
     idleDirector.reset(Date.now());
     publishIdle(restingPose());
   }
+  if (command.type === "companion-settings" && !command.enabled && companionBubbleActive) {
+    clearTimeout(assistantBubbleTimer); assistantBubble.hide(); companionBubbleActive = false;
+  }
   if (command.type === "activity") await syncActivity();
   if (command.type === "quota-settings") await syncQuota();
   broadcast();
@@ -540,10 +563,46 @@ function playSocial(request) {
   broadcast();
   return snapshot();
 }
+function noteInteraction(petId, kind) {
+  void enqueue(() => mutate({ type: "pet-interact", petId, kind })).catch(() => {});
+}
+function showCompanionNote(pet, text) {
+  if (!floating || floating.isDestroyed() || !floating.isVisible()) throw new Error("先显示悬浮宠物，再和伙伴打个招呼。");
+  companionBubbleActive = true;
+  assistantBubble.update({ pet: floating.getBounds(), event: { at: Date.now(), text: tr(text) }, subtitle: pet.name });
+  clearTimeout(assistantBubbleTimer);
+  assistantBubbleTimer = setTimeout(() => { assistantBubble.hide(); companionBubbleActive = false; }, 8000);
+}
+function maybeInitiate(pet, now, blocked) {
+  const event = companionInitiative.step({ now, pet, history: store.state.companionNotes, language: language(),
+    enabled: store.state.settings.companionProactive !== false && store.state.settings.idleEnabled === true,
+    blocked: blocked || initiativePending || !floating.isVisible() || assistant?.busy === true || assistantBubble.key !== null });
+  if (!event) return;
+  initiativePending = true;
+  void enqueue(async () => {
+    if (quitting || screenLocked || suspended || reducedMotion || dragOrigin || idleMenuOpen || activity?.snapshot().status === "running" || assistant?.busy || assistantBubble.key !== null || !floating?.isVisible() || store.state.activePetId !== pet.id || store.state.settings.idleEnabled !== true || (performance && Date.now() - performance.at < (performance.duration || 6000))) return;
+    const currentPet = housePets(store.state).find(p => p.id === pet.id);
+    if (!currentPet || Date.now() - companionPersonality(currentPet).lastInteractionAt < 15 * 60000) return;
+    await mutate({ type: "_companion-note", petId: pet.id });
+    showCompanionNote(pet, event.text);
+    idleDirector.requestBehavior(event.action);
+  }).catch(() => {}).finally(() => { initiativePending = false; });
+}
 function performSkill(petId, skillId) {
   const pet = housePets(store.state).find(p => p.id === petId);
   if (!pet || !ownsSkill(pet, skillId) || !["gift", "idle"].includes(skillById(skillId)?.category)) throw new Error("这位伙伴没有可单独表演的这项技能。");
+  if (skillById(skillId).category === "gift" && ["mouse", "peek", "toyroll"].includes(skillId)) {
+    if (!floating || floating.isDestroyed() || !floating.isVisible()) throw new Error("先显示悬浮宠物，再试试这个桌面小本领。");
+    if (pet.id !== store.state.activePetId) throw new Error("请先选择这位桌面伙伴。");
+    if (reducedMotion || (skillId !== "mouse" && activity?.snapshot().status === "running")) throw new Error("伙伴正在休息或陪你工作，稍后再试。");
+    endSocial(false); performance = null;
+    noteInteraction(pet.id, "play");
+    idleDirector.requestBehavior(skillId);
+    broadcast();
+    return snapshot();
+  }
   endSocial(false);
+  noteInteraction(pet.id, "play");
   performance = { petId, guestId: null, skillId, at: Date.now(), duration: 8000 };
   broadcast();
   return snapshot();
@@ -561,12 +620,16 @@ function playBall() {
     throw new Error("系统已开启减少动态效果，玩球动画暂时休息。");
   if (activity?.snapshot().status === "running")
     throw new Error("伙伴正在陪你工作，等这一轮结束后再玩吧。");
+  endSocial(false); performance = null;
+  noteInteraction(store.state.activePetId, "play");
   idleDirector.playBall();
+  broadcast();
   return snapshot();
 }
 function tickIdle() {
   if (quitting) return;
   const now = Date.now();
+  let fastHover = false;
   try {
     syncActivityBubble();
     if (screenLocked || suspended) { idleDirector.reset(now); return; }
@@ -587,22 +650,34 @@ function tickIdle() {
     const mouse = screen.getCursorScreenPoint();
     const near = mouse.x >= x - 28 && mouse.x <= x + size.width + 28 &&
       mouse.y >= y - 28 && mouse.y <= y + size.height + 28;
-    const performing = performance?.petId === pet.id && !performance.guestId && now - performance.at < (performance.duration || 6000);
-    const result = idleDirector.step({ now, position, area, size, skill: petSkills(pet).idle,
+    fastHover = near && !reducedMotion && !dragOrigin && !idleMenuOpen;
+    const userShow = performance?.source !== "activity" && performance?.petId === pet.id && now - performance.at < (performance.duration || 6000);
+    if (cursorTease.step({now,pointer:mouse,position,size,blocked:!!dragOrigin||idleMenuOpen||reducedMotion||!!socialPerformance||userShow||idleDirector.isManualChase()})) {
+      performance = null; idleDirector.teaseMouse(); noteInteraction(pet.id, "play"); broadcast();
+    }
+    const manualChase = idleDirector.isManualChase();
+    const teased = idleDirector.mouseTeased;
+    const performing = !(manualChase && performance?.source === "activity") && performance?.petId === pet.id && !performance.guestId && now - performance.at < (performance.duration || 6000);
+    const result = idleDirector.step({ now, position, area, size, skill: petSkills(pet).idle, talent: pet.talent?.id, mouse, preferences: companionPersonality(pet).scores,
       enabled: store.state.settings.idleEnabled === true,
       route: store.state.settings.idleRoute || "line", toys: store.state.settings.idleToys !== false,
-      blocked: near || !!socialPerformance || !!dragOrigin || idleMenuOpen || now < idlePausedUntil || reducedMotion || performing || activity?.snapshot().status === "running",
+      deferRequests: (near || idleMenuOpen || now < idlePausedUntil) && !dragOrigin && !socialPerformance && !reducedMotion && !performing && (manualChase || activity?.snapshot().status !== "running"),
+      blocked: (near && !teased) || !!socialPerformance || !!dragOrigin || idleMenuOpen || now < idlePausedUntil || reducedMotion || performing || (!manualChase && activity?.snapshot().status === "running"),
     });
     if (!dragOrigin && (result.position.x !== x || result.position.y !== y)) {
       idleTargetPosition = result.position;
       floating.setPosition(result.position.x, result.position.y, false);
     }
-    publishIdle(result.visual);
+    const gaze = cursorAttention.step({ now, position: result.position, size, area, pointer: mouse,
+      enabled: store.state.settings.idleEnabled === true && store.state.settings.idleMouse !== false,
+      paused: manualChase || !!dragOrigin || idleMenuOpen || reducedMotion || performing || !!socialPerformance || result.visual.mode !== "rest" });
+    publishIdle({ ...result.visual, gaze: result.visual.gaze || gaze });
+    maybeInitiate(pet, now, manualChase || near || !!dragOrigin || idleMenuOpen || reducedMotion || performing || !!socialPerformance || result.visual.mode !== "rest" || activity?.snapshot().status === "running");
   } catch {
     idleDirector.reset(now);
     publishIdle(restingPose());
   } finally {
-    idleTimer = setTimeout(tickIdle, screenLocked || suspended ? 2000 : idleVisual.mode === "walk" ? 33 : 200);
+    idleTimer = setTimeout(tickIdle, screenLocked || suspended ? 2000 : ["walk", "mouse", "peek"].includes(idleVisual.mode) ? 33 : fastHover ? 50 : 200);
     idleTimer.unref?.();
   }
 }
@@ -625,10 +700,11 @@ function activityChanged(value) {
 function perform(petId, guestId) {
   endSocial(false);
   const pet = guestId
-    ? lan?.snapshot().visitors.find((v) => v.id === guestId)?.pet
+    ? allVisitors().find((v) => v.id === guestId)?.pet
     : housePets(store.state).find((p) => p.id === petId);
   if (!pet || !talentById(pet.talent?.id))
     throw new Error("这位伙伴暂时不能表演。");
+  if (!guestId) noteInteraction(pet.id, "play");
   performance = {
     petId: pet.id,
     guestId: guestId ?? null,
@@ -640,8 +716,9 @@ function perform(petId, guestId) {
   return snapshot();
 }
 function syncGuests() {
-  if (!lan?.auth || quitting || screenLocked || suspended) return;
-  const visitors = lan.snapshot().visitors;
+  if (quitting || screenLocked || suspended) return;
+  cardVisitors = cardVisitors.filter(v => v.expiresAt > Date.now());
+  const visitors = allVisitors();
   if (socialPerformance && (!visitors.some(v => v.id === socialPerformance.visitId) || !housePets(store.state).some(p => p.id === socialPerformance.host.id))) endSocial(false);
   for (const [id, window] of guestWindows)
     if (!visitors.some((v) => v.id === id)) {
@@ -677,7 +754,7 @@ function syncGuests() {
       window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
       window.on("closed", () => {
         guestWindows.delete(v.id);
-        if (!quitting && lan?.enabled) lan.dismissVisitor(v.id);
+        if (!quitting) { if(v.source==='card') dismissCardVisitor(v.id); else if(lan?.enabled) lan.dismissVisitor(v.id); }
       });
       load(window, `guest:${v.id}`);
     }
@@ -747,7 +824,7 @@ function register(channel, handler) {
   ipcMain.handle(channel, async (event, ...args) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (!window || ![home, floating, ...guestWindows.values()].includes(window) ||
-      (channel.startsWith("paw:assistant-") && ![home, floating].includes(window)))
+      ((channel.startsWith("paw:assistant-") || channel.startsWith("paw:card-")) && ![home, floating].includes(window)))
       return { ok: false, error: "来源无效。" };
     try {
       if (quitting) throw new Error("应用正在保存并退出。");
@@ -770,6 +847,8 @@ const allowed = new Set([
   "disconnect",
   "float",
   "visit",
+  "pet-interact",
+  "companion-settings",
   "garden",
   "return-home",
   "train",
@@ -815,29 +894,76 @@ else {
         getPet: () => housePets(store.state).find(p => p.id === store.state.activePetId) || housePets(store.state)[0],
         getLanguage: language, executeAction: executeAssistantAction, onChange: () => { if (!quitting) broadcast(); } });
       await assistant.init();
+      const gpuInfo=await app.getGPUInfo('basic').catch(()=>({gpuDevice:[]}));
+      const localAcceleration=(process.platform==='darwin'&&process.arch==='arm64')||(gpuInfo.gpuDevice||[]).some(g=>[0x10de,0x1002].includes(g.vendorId));
+      const modelDirectory=path.join(app.getPath('userData'),'local-models');
       localModels = new OllamaModels({
+        baseURL:'http://127.0.0.1:11534',
+        accelerated:localAcceleration,
+        catalog:new ModelCatalog({directory:modelDirectory,remote:!test}),
+        ...(!test?{runtime:new ManagedRuntime({directory:modelDirectory})}:{}),
+        getLanguage:language,
+        getSelected:()=>assistant.config.enabled?{name:assistant.config.model,provider:assistant.config.provider}:null,
+        getActive:()=>assistant.config.enabled&&assistant.config.provider==='ollama'&&assistant.config.baseURL===localModels.baseURL+'/v1'?assistant.config.model:null,
+        beforeRemove:model=>{if(assistant.config.provider==='ollama'&&assistant.config.model===model&&assistant.config.baseURL===localModels.baseURL+'/v1')assistant.cancel();},
+        onRemove:async model=>{if(assistant.config.provider==='ollama'&&assistant.config.model===model&&assistant.config.baseURL===localModels.baseURL+'/v1'){await assistant.configure({...assistant.config,enabled:false,provider:'',baseURL:'',model:''});assistant.endConversation();assistantBubble.hide();}},
         ...(test && process.env.PAWPRINT_TEST_OLLAMA_URL ? { baseURL: process.env.PAWPRINT_TEST_OLLAMA_URL } : {}),
         onChange: () => { if (!quitting) broadcast(); }, getGeneration: () => assistant.generation,
         onUse: async (model, generation) => {
-          if (generation !== assistant.generation) return false;
+          if (generation !== assistant.generation || assistant.busy) return false;
           await assistant.configure({ ...assistant.config, enabled: true, provider: 'ollama', baseURL: localModels.baseURL + '/v1', model });
           return true;
         },
       });
-      register('paw:assistant-models-refresh', () => localModels.refresh());
+      register('paw:assistant-models-refresh', force => localModels.refresh(force===true));
       register('paw:assistant-model-download', async model => ({ models: await localModels.download(model), assistant: assistant.snapshot() }));
+      register('paw:assistant-model-remove',model=>localModels.remove(model));
       register('paw:assistant-model-use', async model => ({ models: await localModels.use(model), assistant: assistant.snapshot() }));
       register('paw:assistant-model-cancel', () => { localModels.cancel(); return localModels.snapshot(); });
       register('paw:assistant-configure', input => assistant.configure(input));
       register('paw:assistant-profile', (id, value) => assistant.profile(id, value));
       register('paw:assistant-probe', () => assistant.probe());
-      register('paw:assistant-run', async text => showAssistantReply(await assistant.run(text)));
+      register('paw:assistant-run', async text => {
+        if(assistant.config.provider==='ollama'&&assistant.config.baseURL===localModels.baseURL+'/v1')await localModels.ensureAvailable();
+        const petId = assistant.getPet()?.id;
+        const result = await assistant.run(text);
+        if (petId && assistant.getPet()?.id === petId) await enqueue(() => mutate({ type: "pet-interact", petId, kind: "chat" }));
+        return showAssistantReply(result);
+      });
+      register('paw:companion-preview', () => {
+        const pet = housePets(store.state).find(p => p.id === store.state.activePetId) || housePets(store.state)[0];
+        if (!pet) throw new Error("请先选择一位小屋伙伴。");
+        showCompanionNote(pet, companionLine(pet, language()));
+        if (!systemPreferences.getAnimationSettings().prefersReducedMotion) {
+          endSocial(false);
+          performance = { petId: pet.id, guestId: null, skillId: "observe", at: Date.now(), duration: 4000, source: "companion-preview" };
+          broadcast();
+        }
+        return snapshot();
+      });
       register('paw:assistant-cancel', () => { assistant.cancel(); return assistant.snapshot(); });
       register('paw:assistant-end', () => { assistantBubble.hide(); return assistant.endConversation(); });
       register('paw:assistant-help', id => {
         if (!Object.hasOwn(ASSISTANT_LINKS, id)) throw new Error('未知的模型指引。');
         return shell.openExternal(ASSISTANT_LINKS[id]);
       });
+      register('paw:card-create', async id => {
+        const pet=store.state.pets.find(p=>p.id===id);if(!pet)throw new Error("请先选择一位伙伴。");
+        const code=encodePetCard(pet);return {code,png:await QRCode.toDataURL(code,{errorCorrectionLevel:'M',margin:3,width:360}),card:decodePetCard(code)};
+      });
+      register('paw:card-copy', async id => {
+        const pet=store.state.pets.find(p=>p.id===id);if(!pet)throw new Error("请先选择一位伙伴。");
+        const png=await QRCode.toDataURL(encodePetCard(pet),{errorCorrectionLevel:'M',margin:3,width:360});await clipboard.write([new ClipboardItem({'image/png':new Blob([nativeImage.createFromDataURL(png).toPNG()],{type:'image/png'})})]);return true;
+      });
+      register('paw:card-clipboard', async () => {const items=await clipboard.read(),item=items.find(i=>i.types.includes('image/png'));if(!item)throw new Error("剪贴板里没有二维码图片。");const blob=await item.getType('image/png');if(blob.size>10*1024*1024)throw new Error("二维码图片太大。");const image=nativeImage.createFromBuffer(Buffer.from(await blob.arrayBuffer()));const size=image.getSize();return Math.max(size.width,size.height)>2000?image.resize(size.width>=size.height?{width:2000}:{height:2000}).toDataURL():image.toDataURL();});
+      register('paw:card-photo',async r=>{if(!home||!r||![r.x,r.y,r.width,r.height].every(Number.isInteger)||r.x<0||r.y<0||r.width<1||r.width>1000||r.height<1||r.height>800)throw new Error('请先让合照完整显示。');const b=home.getContentBounds();if(r.x+r.width>b.width||r.y+r.height>b.height)throw new Error('请先让合照完整显示。');const image=await home.webContents.capturePage(r);await clipboard.write([new ClipboardItem({'image/png':new Blob([image.toPNG()],{type:'image/png'})})]);return true;});
+      register('paw:card-read', code => decodePetCard(code));
+      register('paw:card-visit', async code => {
+        const card=decodePetCard(code);cardVisitors=cardVisitors.filter(v=>v.expiresAt>Date.now());if(cardVisitors.length>=2)throw new Error("已有两位二维码访客，先送一位回家吧。");
+        const visit={id:'card-'+randomUUID(),pet:card.pet,temperament:card.temperament,peerName:tr('二维码来访'),source:'card',expiresAt:Date.now()+5*60000};
+        cardVisitors.push(visit);await enqueue(async()=>{const next=structuredClone(store.state);next.cardFootprints=[...(next.cardFootprints||[]),{petId:card.pet.id,name:card.pet.name,at:Date.now()}].slice(-50);await store.save(next);});syncGuests();broadcast();return snapshot();
+      });
+      register('paw:card-dismiss', id => {dismissCardVisitor(id);return snapshot();});
       register("paw:state", () => snapshot());
       register("paw:update-check", () => updates.check());
       register("paw:update-install", () => {
@@ -897,7 +1023,7 @@ else {
           case "copy": {
             const code = lan.inviteCode(action.address);
             if (!code) throw new Error("先开启局域网，并连接可互通的 Wi-Fi。");
-            clipboard.writeText(code);
+            await clipboard.writeText(code);
             break;
           }
           case "pair":
@@ -941,7 +1067,7 @@ else {
         return snapshot();
       });
       register("paw:guest-menu", (guestId) => {
-        const v = lan.snapshot().visitors.find((v) => v.id === guestId);
+        const v = allVisitors().find((v) => v.id === guestId);
         if (!v) throw new Error("访客已回家。");
         buildMenu([
           { label: formatText("来自{0}的{1}", [v.peerName, v.pet.name], language()), enabled: false },
@@ -951,7 +1077,7 @@ else {
             label: `表演：${talentById(v.pet.talent.id).name}`,
             click: () => perform(v.pet.id, v.id),
           },
-          { label: "送它回家", click: () => lan.dismissVisitor(v.id) },
+          { label: "送它回家", click: () => v.source==='card'?dismissCardVisitor(v.id):lan.dismissVisitor(v.id) },
           { label: "打开附近的小屋", click: () => createHome("nearby") },
         ]).popup({ window: guestWindows.get(guestId) });
         return true;
@@ -1162,6 +1288,7 @@ else {
     if (process.platform !== "darwin" && !tray) app.quit();
   });
   app.on("before-quit", (event) => {
+    localModels?.close();
     localModels?.cancel();
     activityBubble.close();
     assistantBubble.close();

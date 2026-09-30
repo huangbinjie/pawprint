@@ -1,3 +1,4 @@
+import PetCards from "./PetCards.jsx";
 import RawText from "../i18n/RawText.jsx";
 import { f, t, currentLanguage } from "../i18n/locale.js";
 import React, { useState, useEffect } from "react";
@@ -35,7 +36,7 @@ const labels = {
   cancelled: "已取消",
   "cancel-requested": "等待重连确认取消",
 };
-export default function Nearby({ state, now, working, run, onConsent }) {
+export default function Nearby({ state, now, working, run, onConsent, onState }) {
   const [shareAddress, setShareAddress] = useState("");
   const lan = state.lan,
     own = housePets(state),
@@ -81,6 +82,7 @@ export default function Nearby({ state, now, working, run, onConsent }) {
     .reverse();
   return (
     <div className="nearby-page">
+      <PetCards state={state} onState={onState} />
       <section className="catalog-intro card">
         <div>
           <span className="eyebrow">GOOD COMPANY, CLOSE BY</span>

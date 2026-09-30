@@ -33,15 +33,16 @@ export default function AssistantSettings({ state }) {
     setText(''); setNotice(result.ok ? tx('聊天已结束，对话上下文已清空。', 'Conversation ended and context cleared.') : result.error);
   };
   const help = id => call(() => api.assistantHelp(id));
-  const modelBusy = ['connecting', 'starting', 'downloading', 'testing'].includes(state.localModels?.status);
+  const modelBusy = ['connecting', 'preparing-runtime', 'starting', 'downloading', 'testing', 'removing'].includes(state.localModels?.status);
   const local = ['ollama', 'lmstudio'].includes(draft.provider);
   return <section className="card settings-card assistant-settings" data-testid="assistant-settings">
     <div className="section-title"><h3>{tx('宠物助手', 'Pet assistant')}</h3><span className="chip">{current.enabled ? tx('已开启', 'Enabled') : tx('默认关闭', 'Off by default')}</span></div>
-    <p>{tx('连接你自己的模型，与宠物文字聊天或让它打开网站和应用。Pawprint 不再内置模型或语音监听。', 'Connect your own model to chat by text or open websites and apps. Pawprint no longer bundles models or voice listening.')}</p>
+    <p>{tx('下载推荐本地模型即可文字聊天，无需填写地址和模型名称。也可在高级设置连接自己的服务；语音功能还未接入。', 'Download a recommended local model to chat without entering addresses or model names. Advanced settings support your own provider; voice has not been added yet.')}</p>
     {current.migrationNotice && <p className="assistant-notice">{tx('旧版内置模型与语音监听已移除，宠物性格和已保存的 key 已保留。请选择自己的模型服务。', 'Old built-in models and voice listening were removed. Pet personalities and saved keys are preserved. Choose your own model service.')}</p>}
     {(notice || current.error) && <p className="assistant-notice" role="status"><RawText>{current.error || notice}</RawText></p>}
     <label className="assistant-check"><input type="checkbox" checked={draft.enabled} disabled={modelBusy} onChange={e => update({ enabled: e.target.checked })} />{tx('开启宠物助手', 'Enable pet assistant')}</label>
     <h4>{tx('1 · 选择自己的模型', '1 · Choose your model')}</h4>
+    <details open={['lmstudio','mimo','deepseek','openai','custom'].includes(draft.provider)}><summary>{tx('其他模型来源（高级）','Other model providers (advanced)')}</summary>
     <div className="assistant-buttons">
       {['ollama', 'lmstudio', 'mimo', 'deepseek', 'openai'].map(provider => <button key={provider} className={`button ${draft.provider === provider ? 'primary' : 'secondary'} small`} disabled={modelBusy} onClick={() => chooseProvider(provider)}>{provider === 'mimo' ? tx('小米 MiMo', 'Xiaomi MiMo') : PROVIDERS[provider].label}</button>)}
     </div>
@@ -49,7 +50,8 @@ export default function AssistantSettings({ state }) {
       <option value="">{tx('请选择模型服务', 'Choose a model service')}</option>
       {Object.entries(PROVIDERS).map(([id, p]) => <option key={id} value={id}>{id === 'custom' ? tx('自定义兼容接口', 'Custom compatible API') : id === 'mimo' ? tx('小米 MiMo', 'Xiaomi MiMo') : p.label}</option>)}
     </select></label>
-    {draft.provider === 'ollama' && <LocalModels state={state.localModels} language={state.settings.language} onConfigured={data => { requestId.current++; setBusy(false); setDraft(data); setDirty(false); setKey(''); setClearKey(false); setNotice(tx('模型已就绪，已自动保存连接，可以聊天了。', 'Model ready. Connection saved; you can chat now.')); }} />}
+    </details>
+    {(draft.provider === 'ollama' || !draft.provider) && <LocalModels state={state.localModels} language={state.settings.language} onConfigured={data => { requestId.current++; setBusy(false); setDraft(data); setDirty(false); setKey(''); setClearKey(false); setNotice(tx('模型已就绪，已自动保存连接，可以聊天了。', 'Model ready. Connection saved; you can chat now.')); }} />}
     {draft.provider === 'lmstudio' && <div className="assistant-guide"><p>{tx('在 LM Studio 下载并加载模型，开启本地服务器后填写下方连接信息。想一键下载并使用，可以选择 Ollama。', 'Load a model and start the server in LM Studio, then enter its connection below. Choose Ollama for one-click model downloads.')}</p><button className="button secondary small" onClick={() => help('lmstudio')}>{tx('下载 LM Studio（官网）', 'Download LM Studio (official)')}</button></div>}
     {draft.provider && <details open={draft.provider !== 'ollama'}><summary>{local ? tx('高级连接设置（可选）', 'Advanced connection (optional)') : tx('填写 API 连接', 'API connection')}</summary>
       {!local && <><p>{tx('填写供应商提供的 key 和模型名称。需要兼容 Chat Completions；执行操作还要求支持工具调用。只有你发送文字时才会请求模型，角色资料及当前对话会发给所选服务。', 'Enter your provider’s key and model name. Chat Completions compatibility is required, plus tool calling for actions. Requests happen only when you send text; character details and current conversation go to the selected service.')}</p>

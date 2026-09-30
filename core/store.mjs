@@ -1,3 +1,4 @@
+import { validCompanionProfile } from "./personality.mjs";
 import { mkdir, readFile, writeFile, rename, copyFile } from "node:fs/promises";
 import path from "node:path";
 import { migrateTalents, talentById } from "./talents.mjs";
@@ -108,6 +109,8 @@ export function validateState(state) {
     !housePets(state).some((p) => p.id === state.activePetId)
   )
     throw new Error("Invalid active pet");
+  if (state.pets.some(p => !validCompanionProfile(p.companion))) throw new Error("Invalid companion profile");
+  if (state.companionNotes !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(state.companionNotes?.date || "") || !Number.isInteger(state.companionNotes.count) || state.companionNotes.count < 0 || state.companionNotes.count > 2 || !Number.isFinite(state.companionNotes.lastAt))) throw new Error("Invalid companion initiative history");
   let balance = 0;
   const entries = new Set();
   for (const row of [...state.ledger].reverse()) {
