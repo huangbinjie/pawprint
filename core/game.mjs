@@ -1,3 +1,6 @@
+import {defaultSettings} from './defaults.mjs';
+import { playTransition } from './play.mjs';
+import { workTransition } from './work.mjs';
 import { recordInteraction } from "./personality.mjs";
 import { entry } from "./ledger.mjs";
 import { IDLE_ROUTES } from "./idle.mjs";
@@ -40,7 +43,7 @@ export function initialState(now) {
     eggs: [],
     ledger: [],
     activePetId: null,
-    settings: { connected: false, floating: true, desktopShellVersion: 1, idleEnabled: true, idleToys: true },
+    settings: defaultSettings(),
     usage: { days: {}, report: null, lastError: null },
   };
 }
@@ -52,6 +55,8 @@ export function transition(current, command, { now, rng, id }) {
   const state = structuredClone(current);
   if (command.type.startsWith("_lan-"))
     return lanTransition(state, command, { now, rng, id });
+  if (command.type.startsWith("play-") || command.type.startsWith("room-")) return playTransition(state,command,{now,rng,id});
+  if (command.type.startsWith("work-") || ["_work-observe","_work-metadata","_work-attention","attention-settings"].includes(command.type)) return workTransition(state,command,{now});
   switch (command.type) {
     case "free-egg": {
       if (state.freeEggClaimed) throw new Error("你的初遇蛋已经领取过了。");

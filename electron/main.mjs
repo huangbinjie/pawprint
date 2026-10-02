@@ -1,16 +1,16 @@
+import {AttentionBridge,validAttentionEvent} from './attention.mjs';
+import {hooksSettingsScript} from './client-settings.mjs';
+import {ClientNavigation} from './client-navigation.mjs';
+import {readWorkTitles,readRecentWorkChats} from './work-titles.mjs';
+import { workState, workTarget, attentionTarget } from '../core/work.mjs';
 import QRCode from 'qrcode';
 import {encodePetCard,decodePetCard} from '../core/pet-card.mjs';
-import { OllamaModels } from './assistant/ollama.mjs';
-import { ASSISTANT_LINKS } from '../core/assistant.mjs';
-import { AssistantService } from "./assistant/service.mjs";
 import { ActivityBubble } from "./activity-bubble.mjs";
 import { companionPersonality, companionLine, CompanionInitiative } from "../core/personality.mjs";
 import { CursorAttention, CursorTease } from "../core/attention.mjs";
-import { ModelCatalog } from './assistant/catalog.mjs';
-import { ManagedRuntime } from './assistant/runtime.mjs';
 import { UpdateService } from "./updater.mjs";
 import { LanService } from "./lan/service.mjs";
-import { CodexActivity } from "./activity.mjs";
+import { CodexActivity, validThreadId } from "./activity.mjs";
 import { QuotaMonitor } from "./quota/monitor.mjs";
 import { quotaPresentation } from "../core/quota.mjs";
 import { translateText, translateMenu, formatText } from "../core/i18n.mjs";
@@ -19,7 +19,6 @@ import { talentById } from "../core/talents.mjs";
 import { GIFT_SKILLS, skillById, ownsSkill, petSkills, socialCast } from "../core/skills.mjs";
 import {
   app,
-  safeStorage,
   shell,
   BrowserWindow,
   ipcMain,
@@ -53,7 +52,7 @@ import {
   heldCoins,
 } from "../core/economy.mjs";
 import { readUsage, defaultCodexHome } from "./local-usage.mjs";
-import { FLOAT_SIZE, floatPosition, desktopUpgrade, petScale, scaledFloatSize } from "../core/desktop.mjs";
+import { FLOAT_SIZE, floatPosition, companionPanelBounds, petControlsBounds, desktopUpgrade, petScale, scaledFloatSize } from "../core/desktop.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dev = process.argv.includes("--dev");
@@ -66,15 +65,22 @@ app.setPath(
     ? process.env.PAWPRINT_TEST_DATA
     : path.join(app.getPath("appData"), "Pawprint"),
 );
+let attentionBridge,attentionBubbleEvent;
+let petControls,setupGuideWindow,setupGuideValue;
+let petControlsRevealed=false,petControlsHideTimer;
+let petControlsPressed=false,petControlsInteractive=false;
+const petControlsHover={pet:false,dock:false};
+let workTitlesTimer, workTitlesPending;
+let workMini, workPanelRequested=false, workNoteWindow, workNoteValue=null, workNoteTimer;
 let home, floating, store, refreshPromise, interval, tray, moveTimer, updates;
 const activityBubble = new ActivityBubble();
 let dragOrigin = null;
 let lan,
   performance = null;
-let activity, lastActivityEvent, quota, assistant, localModels;
+let activity, lastActivityEvent, quota;
 let updateNoticeVersion;
-const assistantBubble = new ActivityBubble();
-let assistantBubbleTimer;
+const companionBubble = new ActivityBubble();
+let companionBubbleTimer;
 let companionBubbleActive = false;
 let trayImage, trayWatch, trayRecoveries = 0, trayLastReason = "startup";
 const TRAY_GUID = "22e5b352-a013-4f52-86fb-68ce83b3b386";
@@ -97,6 +103,7 @@ const allVisitors = () => [...(lan?.snapshot().visitors || []), ...cardVisitors.
 function dismissCardVisitor(id) { cardVisitors = cardVisitors.filter(v => v.id !== id); syncGuests(); broadcast(); }
 let previousInvites = new Set();
 const execute = promisify(execFile);
+const clientNavigation=new ClientNavigation({openExternal:(...args)=>shell.openExternal(...args)});
 let queue = Promise.resolve();
 let busy = false;
 let quitting = false;
@@ -110,8 +117,6 @@ function snapshot() {
     ...structuredClone(store.state),
     platform: process.platform,
     appVersion: app.getVersion(),
-    assistant: assistant?.snapshot(),
-    localModels: localModels?.snapshot(),
     availableCoins: availableCoins(store.state),
     heldCoins: heldCoins(store.state),
     performance,
@@ -122,7 +127,12 @@ function snapshot() {
     displayScale: desktopScale(),
     socialPerformance,
     idle: idleVisual,
-    activity: activity?.snapshot() ?? { enabled: false, status: "off", activeCount: 0, event: null },
+    activity: { ...(activity?.snapshot() ?? { enabled:false,status:"off",activeCount:0,event:null }), target:workTarget(store.state,activity?.snapshot()) },
+    work:workState(store.state),
+    workNote:workNoteValue,
+    setupGuide:setupGuideValue,
+    controlsRevealed:petControlsRevealed,
+    attention:attentionBridge?.snapshot() || {status:"off",supported:process.platform==="darwin",lastEventAt:null},
     lan: lan?.auth
       ? lan.snapshot()
       : {
@@ -146,6 +156,7 @@ function snapshot() {
   };
 }
 function broadcast() {
+  syncPetControls();
   syncActivityBubble();
   syncGuests();
   notifyInvites();
@@ -176,7 +187,7 @@ function createHome(section) {
     "genes",
     "garden",
     "talents",
-    "nearby",
+    "nearby", "work", "play",
   ].includes(section)
     ? section
     : null;
@@ -225,22 +236,171 @@ async function openClient() {
   }
   return true;
 }
-function showAssistantReply(result) {
-  if (result?.text && floating && !floating.isDestroyed() && floating.isVisible()) {
-    companionBubbleActive = false;
-    assistantBubble.update({ pet: floating.getBounds(), event: { at: Date.now(), text: result.text.slice(0, 65) }, subtitle: assistant.getPet()?.name });
-    clearTimeout(assistantBubbleTimer); assistantBubbleTimer = setTimeout(() => assistantBubble.hide(), 8000);
+async function receiveAttention(events) {
+  if(quitting || store.state.settings.attentionEnabled!==true)return;
+  const valid=events.filter(e=>validAttentionEvent(e));if(!valid.length)return;
+  const changed=await enqueue(async()=>{
+    const before=workState(store.state).recent;
+    const next=transition(store.state,{type:'_work-attention',events:valid},{now:Date.now()});
+    const fresh=next.work.recent.filter(r=>r.attention&&!before.some(b=>b.threadId===r.threadId&&(b.attentions || (b.attention?[b.attention]:[])).some(a=>a.id===r.attention.id)));
+    if(JSON.stringify(next.work)!==JSON.stringify(store.state.work))await store.save(next);
+    return fresh;
+  });
+  const latest=changed.sort((a,b)=>b.attention.at-a.attention.at)[0];
+  if(latest){
+    const text=latest.attention.kind==='approval'?'Codex 等你审批':'Codex 等你回答';
+    attentionBubbleEvent={at:Date.now(),text:tr(text),threadId:latest.threadId,id:latest.attention.id};
+    if(!store.state.settings.workDnd){
+      const mode=store.state.settings.workReminder || 'quiet';
+      try{if(mode==='sound')shell.beep();
+        if(mode==='system'&&Notification.isSupported()){const notice=new Notification({title:'Pawprint',body:tr(text),silent:true});notice.on('click',()=>void openActivitySession(latest.threadId).catch(()=>createWorkPanel()));notice.show();}
+      }catch{}
+    }
+    void syncWorkTitles();
   }
-  return result;
+  if(attentionBubbleEvent&&!workState(store.state).recent.some(r=>r.threadId===attentionBubbleEvent.threadId&&(r.attentions || (r.attention?[r.attention]:[])).some(a=>a.id===attentionBubbleEvent.id)))attentionBubbleEvent=null;
+  broadcast();
 }
-async function executeAssistantAction(action) {
-  if (action.url) return shell.openExternal(action.url);
-  if (action.app === 'browser') return shell.openExternal('https://www.google.com');
-  const macApps = { calculator: 'com.apple.calculator', notes: 'com.apple.Notes', calendar: 'com.apple.iCal', music: 'com.apple.Music' };
-  const winApps = { calculator: 'calc.exe', notes: 'notepad.exe' };
-  if (process.platform === 'darwin') await execute('/usr/bin/open', ['-b', macApps[action.app]], { timeout: 10000 });
-  else if (process.platform === 'win32' && winApps[action.app]) await execute(winApps[action.app], [], { timeout: 10000 });
-  else throw new Error('这个系统暂不支持打开该应用。');
+async function syncWorkTitles() {
+  if(quitting || !store?.state || workTitlesPending)return workTitlesPending;
+  const directory=store.state.settings.codexHome || (test && process.env.PAWPRINT_TEST_CODEX_HOME) || defaultCodexHome();
+  const ids=workState(store.state).recent.map(r=>r.threadId);
+  if(!ids.length)return;
+  workTitlesPending=(async()=>{
+    const rows=await readWorkTitles(directory,ids);
+    if(!rows.length || quitting)return;
+    await enqueue(async()=>{
+      const current=store.state.settings.codexHome || (test && process.env.PAWPRINT_TEST_CODEX_HOME) || defaultCodexHome();
+      if(current!==directory || quitting)return;
+      const next=transition(store.state,{type:'_work-metadata',rows},{now:Date.now()});
+      if(JSON.stringify(next.work)!==JSON.stringify(store.state.work)){await store.save(next);broadcast();}
+    });
+  })().catch(()=>{}).finally(()=>{workTitlesPending=null;});
+  return workTitlesPending;
+}
+function hidePetControls(){
+  clearTimeout(petControlsHideTimer);petControlsHover.pet=false;petControlsHover.dock=false;
+  petControlsPressed=false;setPetControlsInteractive(false);
+  if(petControls&&!petControls.isDestroyed())petControls.hide();
+  if(petControlsRevealed){petControlsRevealed=false;broadcast();}
+}
+function setPetControlsInteractive(interactive){
+  if(!petControls||petControls.isDestroyed())return;
+  const next=petControlsPressed||interactive;
+  if(next===petControlsInteractive)return;
+  petControlsInteractive=next;petControls.setIgnoreMouseEvents(!next,{forward:true});
+}
+function schedulePetControlsHide(){
+  clearTimeout(petControlsHideTimer);
+  if(petControlsPressed)return;
+  petControlsHideTimer=setTimeout(()=>{
+    if(quitting||petControlsPressed||petControlsHover.pet||petControlsHover.dock)return;
+    petControlsRevealed=false;setPetControlsInteractive(false);broadcast();
+  },300);
+}
+function hoverPetControls(surface,hovered){
+  if(petControlsHover[surface]===hovered)return;
+  petControlsHover[surface]=hovered;clearTimeout(petControlsHideTimer);
+  if(petControlsHover.pet||petControlsHover.dock){
+    if(!petControlsRevealed){petControlsRevealed=true;setPetControlsInteractive(true);broadcast();}
+  }else{
+    // Let the cursor cross the small gap between the cat and its separate dock.
+    schedulePetControlsHide();
+  }
+}
+function petAnchor(){
+  if(!floating||floating.isDestroyed()||!floating.isVisible())return null;
+  const p=floating.getBounds();
+  if(!petControls||petControls.isDestroyed()||!petControls.isVisible())return p;
+  const d=petControls.getBounds(),x=Math.min(p.x,d.x),y=Math.min(p.y,d.y);
+  return {x,y,width:Math.max(p.x+p.width,d.x+d.width)-x,height:Math.max(p.y+p.height,d.y+d.height)-y};
+}
+function syncPetControls(){
+  if(quitting||screenLocked||suspended||!floating||floating.isDestroyed()||!floating.isVisible()||!housePets(store.state).length){hidePetControls();return;}
+  const p=floating.getBounds(),area=screen.getDisplayMatching(p).workArea;
+  const waiting=store.state.settings.attentionEnabled&&attentionTarget(store.state),target=workTarget(store.state,activity?.snapshot());
+  const count=1+(target?1:0)+(waiting?1:0),bounds=petControlsBounds(p,area,count);
+  if(!petControls||petControls.isDestroyed()){
+    const w=new BrowserWindow({...bounds,title:'Pawprint Pet Controls',frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,movable:false,focusable:false,alwaysOnTop:true,skipTaskbar:true,hasShadow:false,acceptFirstMouse:true,show:false,
+      webPreferences:{preload:path.join(here,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+    petControls=w;petControlsInteractive=false;petControlsPressed=false;w.setIgnoreMouseEvents(true,{forward:true});w.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});w.on('page-title-updated',e=>e.preventDefault());w.once('ready-to-show',()=>{if(w===petControls&&!quitting&&floating?.isVisible())w.showInactive();});w.on('closed',()=>{if(w===petControls)petControls=null;});load(w,'petcontrols');
+  }else{petControls.setBounds(bounds,false);if(!petControls.isVisible())petControls.showInactive();}
+}
+function showClientGuide(kind){
+  setupGuideValue={kind,navigation:null};
+  const bounds=panelBounds({width:390,height:590});
+  if(!setupGuideWindow||setupGuideWindow.isDestroyed()){
+    const w=new BrowserWindow({...bounds,title:'Pawprint Client Help',frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,alwaysOnTop:true,skipTaskbar:true,show:false,
+      webPreferences:{preload:path.join(here,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+    setupGuideWindow=w;w.on('page-title-updated',e=>e.preventDefault());w.once('ready-to-show',()=>{if(!quitting&&w===setupGuideWindow)w.show();});w.on('closed',()=>{if(w===setupGuideWindow)setupGuideWindow=null;});load(w,'clientsetup');
+  }else{setupGuideWindow.setBounds(bounds,false);setupGuideWindow.show();setupGuideWindow.focus();}
+  broadcast();return true;
+}
+function hideWorkPanel() {
+  workPanelRequested=false;
+  if (workMini && !workMini.isDestroyed()) workMini.hide();
+  idlePausedUntil=Date.now()+1000;
+  return true;
+}
+function hideWorkNote() {
+  clearTimeout(workNoteTimer);workNoteValue=null;
+  if(workNoteWindow && !workNoteWindow.isDestroyed())workNoteWindow.hide();
+}
+function panelBounds(preferred) {
+  const pet=petAnchor();
+  const area=pet ? screen.getDisplayMatching(pet).workArea : screen.getPrimaryDisplay().workArea;
+  return companionPanelBounds(pet || {x:area.x+area.width-220,y:area.y+area.height-242,width:220,height:242},area,preferred);
+}
+function createWorkPanel() {
+  if(screenLocked || suspended)return false;
+  if(workMini && !workMini.isDestroyed() && workMini.isVisible())return hideWorkPanel();
+  workPanelRequested=true;void syncWorkTitles();
+  activityBubble.hide();hideWorkNote();companionBubble.hide();
+  const bounds=panelBounds({width:350,height:Math.min(580,190+workState(store.state).recent.length*120)});
+  if(!workMini || workMini.isDestroyed()) {
+    workMini=new BrowserWindow({...bounds,title:'Pawprint Work Chats',frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,movable:false,alwaysOnTop:true,skipTaskbar:true,hasShadow:false,show:false,
+      webPreferences:{preload:path.join(here,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+    workMini.on('page-title-updated',event=>event.preventDefault());
+    workMini.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
+    const window=workMini;
+    window.once('ready-to-show',()=>{if(workPanelRequested && !quitting && !screenLocked && !suspended && window===workMini){window.show();window.focus();}});
+    window.on('blur',()=>{if(!quitting)hideWorkPanel();});
+    window.on('closed',()=>{if(window===workMini)workMini=null;});
+    load(window,'workmini');
+  } else {workMini.setBounds(bounds,false);workMini.show();workMini.focus();broadcast();}
+  return true;
+}
+function showWorkNote(target) {
+  hideWorkNote();
+  if(!target?.bookmark || screenLocked || suspended)return;
+  const text=target.bookmark;
+  workNoteValue={threadId:target.threadId,title:target.title || target.bookmark, text,at:Date.now()};
+  const lines=Math.ceil([...text].reduce((n,c)=>n+(/[^\x00-\xff]/.test(c)?14:/[MW@#%]/.test(c)?13:8),0)/278);
+  const bounds=panelBounds({width:310,height:Math.max(100,88+lines*20)});
+  if(!workNoteWindow || workNoteWindow.isDestroyed()) {
+    workNoteWindow=new BrowserWindow({...bounds,title:'Pawprint Work Bookmark',frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,movable:false,focusable:false,alwaysOnTop:true,skipTaskbar:true,hasShadow:false,show:false,
+      webPreferences:{preload:path.join(here,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+    workNoteWindow.on('page-title-updated',event=>event.preventDefault());
+    workNoteWindow.setIgnoreMouseEvents(true);
+    workNoteWindow.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
+    const window=workNoteWindow;
+    window.once('ready-to-show',()=>{if(workNoteValue && !quitting && !screenLocked && !suspended && window===workNoteWindow)window.showInactive();});
+    window.on('closed',()=>{if(window===workNoteWindow)workNoteWindow=null;});
+    load(window,'worknote');
+  } else {workNoteWindow.setBounds(bounds,false);workNoteWindow.showInactive();}
+  broadcast();
+  workNoteTimer=setTimeout(()=>{hideWorkNote();broadcast();},15000);workNoteTimer.unref?.();
+}
+async function openActivitySession(threadId) {
+  const target=threadId ? workState(store.state).recent.find(r=>r.threadId===threadId) : workTarget(store.state,activity?.snapshot());
+  if(!validThreadId(target?.threadId))throw new Error("当前没有可返回的 Codex 会话，请开启会话联动并等待新记录。");
+  const panelWasVisible=workMini?.isVisible();hideWorkPanel();
+  try { await clientNavigation.open(target.threadId); }
+  catch {if(panelWasVisible)createWorkPanel();throw new Error("无法打开对应会话，请确认已安装新版 ChatGPT / Codex 桌面客户端。");}
+  await enqueue(()=>mutate({type:"work-read",threadId:target.threadId}));
+  hideWorkPanel();
+  showWorkNote(workState(store.state).recent.find(r=>r.threadId===target.threadId));
+  return true;
 }
 function menuAction(action) {
   void Promise.resolve()
@@ -250,6 +410,7 @@ function menuAction(action) {
 function menuTemplate() {
   const pet = store.state.pets.find((p) => p.id === store.state.activePetId);
   const q = quotaPresentation(quota?.snapshot(), store.state.settings.quotaWindow, Date.now(), language());
+  const waiting=store.state.settings.attentionEnabled?attentionTarget(store.state):null;
   return [
     {
       label: `爪印 · ${pet?.name || tr(store.state.eggs.length ? "等待孵化的蛋" : store.state.freeEggClaimed ? "伙伴在后花园休息" : "一枚等待相遇的蛋")}`,
@@ -260,7 +421,6 @@ function menuTemplate() {
       enabled: false,
     },
     ...(updates?.snapshot().status === 'available' ? [{ label: `更新到 v${updates.snapshot().release.version}`, click: () => createHome('settings') }] : []),
-    { label: '宠物助手设置', click: () => createHome('settings') },
     { type: "separator" },
     ...(store.state.settings.quotaEnabled ? [
       { label: q.values.weekly.detail, enabled: false },
@@ -300,6 +460,10 @@ function menuTemplate() {
       enabled: !!pet,
       click: () => perform(pet.id),
     },
+    ...(waiting?[{label:waiting.attention.kind==='approval'?'Codex 等你审批':'Codex 等你回答',click:()=>menuAction(()=>openActivitySession(waiting.threadId))}]:[]),
+    { label:"工作会话与便签",click:createWorkPanel },
+    { label:"玩耍与小房间",click:()=>createHome("play") },
+    { label: "返回最近 Codex 会话", enabled: validThreadId(workTarget(store.state,activity?.snapshot())?.threadId), click: () => menuAction(openActivitySession) },
     { label: "打开 Codex / ChatGPT", enabled: process.platform === "darwin", click: () => menuAction(openClient) },
     { type: "separator" },
     {
@@ -403,14 +567,20 @@ function createTray(reason = "startup") {
   updateTray();
 }
 function syncActivityBubble() {
-  if (screenLocked || suspended) { activityBubble.hide(); return; }
+  if (screenLocked || suspended || workNoteValue || workMini?.isVisible() || store.state.settings.workDnd) { activityBubble.hide(); return; }
+  if(attentionBubbleEvent && Date.now()-attentionBubbleEvent.at<8000){
+    const pet=petAnchor();
+    const row=workState(store.state).recent.find(r=>r.threadId===attentionBubbleEvent.threadId);
+    activityBubble.update({pet,event:attentionBubbleEvent,subtitle:row?.title || null});return;
+  }
   const state = activity?.snapshot();
   const event = state?.event;
   if (!event || Date.now() - event.at >= 8000) { activityBubble.hide(); return; }
-  const pet = floating && !floating.isDestroyed() && floating.isVisible() ? floating.getBounds() : null;
+  const pet = petAnchor();
   const remaining = state?.activeCount > (event?.kind === "completed" ? 0 : 1)
     ? tr(`还有 ${state.activeCount} 个会话在进行`) : null;
-  activityBubble.update({ pet, event: event ? { ...event, text: tr(event.text) } : null, subtitle: remaining });
+  const subtitle=remaining || (state?.uncertainCount ? tr("还有会话的状态暂不确定") : null);
+  activityBubble.update({ pet, event: event ? { ...event, text: tr(event.text) } : null, subtitle });
 }
 function rememberPosition() {
   clearTimeout(moveTimer);
@@ -462,7 +632,8 @@ function syncFloating() {
   floating.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   floating.once("ready-to-show", () => floating?.showInactive());
   floating.on("moved", () => {
-    syncActivityBubble();
+    syncPetControls();syncActivityBubble();
+    if(workNoteValue && workNoteWindow && !workNoteWindow.isDestroyed()){const {width,height}=workNoteWindow.getBounds();workNoteWindow.setBounds(panelBounds({width,height}),false);}
     const [x, y] = floating.getPosition();
     if (idleTargetPosition?.x === x && idleTargetPosition?.y === y) return;
     clearTimeout(moveTimer);
@@ -470,9 +641,11 @@ function syncFloating() {
       void rememberPosition()?.catch(() => {});
     }, 350);
   });
+  floating.on("show",syncPetControls);floating.on("hide",hidePetControls);
   floating.on("closed", () => {
+    hidePetControls();
     floating = null;
-    activityBubble.hide();
+    activityBubble.hide();hideWorkPanel();hideWorkNote();
     dragOrigin = null;
     idleTargetPosition = null;
     idleDirector.reset(Date.now());
@@ -504,9 +677,10 @@ async function mutate(command) {
     publishIdle(restingPose());
   }
   if (command.type === "companion-settings" && !command.enabled && companionBubbleActive) {
-    clearTimeout(assistantBubbleTimer); assistantBubble.hide(); companionBubbleActive = false;
+    clearTimeout(companionBubbleTimer); companionBubble.hide(); companionBubbleActive = false;
   }
   if (command.type === "activity") await syncActivity();
+  if(command.type==='attention-settings' && !command.enabled)attentionBubbleEvent=null;
   if (command.type === "quota-settings") await syncQuota();
   broadcast();
   syncFloating();
@@ -569,18 +743,18 @@ function noteInteraction(petId, kind) {
 function showCompanionNote(pet, text) {
   if (!floating || floating.isDestroyed() || !floating.isVisible()) throw new Error("先显示悬浮宠物，再和伙伴打个招呼。");
   companionBubbleActive = true;
-  assistantBubble.update({ pet: floating.getBounds(), event: { at: Date.now(), text: tr(text) }, subtitle: pet.name });
-  clearTimeout(assistantBubbleTimer);
-  assistantBubbleTimer = setTimeout(() => { assistantBubble.hide(); companionBubbleActive = false; }, 8000);
+  companionBubble.update({ pet: floating.getBounds(), event: { at: Date.now(), text: tr(text) }, subtitle: pet.name });
+  clearTimeout(companionBubbleTimer);
+  companionBubbleTimer = setTimeout(() => { companionBubble.hide(); companionBubbleActive = false; }, 8000);
 }
 function maybeInitiate(pet, now, blocked) {
   const event = companionInitiative.step({ now, pet, history: store.state.companionNotes, language: language(),
     enabled: store.state.settings.companionProactive !== false && store.state.settings.idleEnabled === true,
-    blocked: blocked || initiativePending || !floating.isVisible() || assistant?.busy === true || assistantBubble.key !== null });
+    blocked: blocked || initiativePending || !floating.isVisible() || companionBubble.key !== null });
   if (!event) return;
   initiativePending = true;
   void enqueue(async () => {
-    if (quitting || screenLocked || suspended || reducedMotion || dragOrigin || idleMenuOpen || activity?.snapshot().status === "running" || assistant?.busy || assistantBubble.key !== null || !floating?.isVisible() || store.state.activePetId !== pet.id || store.state.settings.idleEnabled !== true || (performance && Date.now() - performance.at < (performance.duration || 6000))) return;
+    if (quitting || screenLocked || suspended || reducedMotion || dragOrigin || idleMenuOpen || activity?.snapshot().status === "running" || companionBubble.key !== null || !floating?.isVisible() || store.state.activePetId !== pet.id || store.state.settings.idleEnabled !== true || (performance && Date.now() - performance.at < (performance.duration || 6000))) return;
     const currentPet = housePets(store.state).find(p => p.id === pet.id);
     if (!currentPet || Date.now() - companionPersonality(currentPet).lastInteractionAt < 15 * 60000) return;
     await mutate({ type: "_companion-note", petId: pet.id });
@@ -647,6 +821,7 @@ function tickIdle() {
     const position = { x, y };
     const size = desktopSize();
     const area = screen.getDisplayMatching({ ...position, ...size }).workArea;
+    if(workMini?.isVisible() || workNoteValue){idleDirector.reset(now);publishIdle(restingPose());return;}
     const mouse = screen.getCursorScreenPoint();
     const near = mouse.x >= x - 28 && mouse.x <= x + size.width + 28 &&
       mouse.y >= y - 28 && mouse.y <= y + size.height + 28;
@@ -683,16 +858,32 @@ function tickIdle() {
 }
 function activityChanged(value) {
   if (quitting) return;
+  const completion=value.event?.kind==='completed' && `${value.event.at}:${value.event.id}`!==lastActivityEvent ? value.event : null;
+  if(value.recent?.length || completion)void enqueue(async()=>{
+    const next=transition(store.state,{type:'_work-observe',recent:value.recent,completed:completion},{now:Date.now()});
+    if(JSON.stringify(next.work)!==JSON.stringify(store.state.work)){await store.save(next);broadcast();}
+  }).catch(()=>{});
+  if(completion && !store.state.settings.workDnd){
+    try {
+    const mode=store.state.settings.workReminder || 'quiet';
+    if(mode==='sound')shell.beep();
+    if(mode==='system' && Notification.isSupported()){
+      const notice=new Notification({title:'Pawprint',body:tr('本轮回复结束啦'),silent:true});
+      notice.on('click',()=>{void openActivitySession(completion.threadId).catch(()=>createHome('work'));});notice.show();
+    }
+    } catch { /* OS reminder availability must not interrupt local tracking. */ }
+  }
   if (value.status === "running") endSocial(false);
+  if((attentionTarget(store.state) || value.activeCount || value.uncertainCount || ["unknown","unavailable","off"].includes(value.status)) && performance?.source==="activity") performance=null;
   const eventKey = value.event ? `${value.event.at}:${value.event.id}` : null;
   if (value.event?.kind === "completed" && eventKey !== lastActivityEvent) {
     lastActivityEvent = eventKey;
-    const pets = housePets(store.state);
-    const pet = pets.find(p => p.id === store.state.activePetId) || pets[0];
-    if (pet) performance = {
-      petId: pet.id, guestId: null, talentId: pet.talent.id,
-      level: pet.talent.level, at: Date.now(), source: "activity",
-    };
+    if (!value.activeCount && !value.uncertainCount && !attentionTarget(store.state)) {
+      const pets = housePets(store.state);
+      const pet = pets.find(p => p.id === store.state.activePetId) || pets[0];
+      if (pet) performance = { petId: pet.id, guestId: null, talentId: pet.talent.id,
+        level: pet.talent.level, at: Date.now(), source: "activity" };
+    }
   }
   if (!value.enabled && performance?.source === "activity") performance = null;
   broadcast();
@@ -823,9 +1014,17 @@ function refresh() {
 function register(channel, handler) {
   ipcMain.handle(channel, async (event, ...args) => {
     const window = BrowserWindow.fromWebContents(event.sender);
-    if (!window || ![home, floating, ...guestWindows.values()].includes(window) ||
-      ((channel.startsWith("paw:assistant-") || channel.startsWith("paw:card-")) && ![home, floating].includes(window)))
-      return { ok: false, error: "来源无效。" };
+    const dock=window===petControls,guide=window===setupGuideWindow;
+    const owner=[home,floating].includes(window),mini=window===workMini,note=window===workNoteWindow;
+    const miniChannel=['paw:state','paw:command','paw:helper-guide','paw:helper-settings','paw:helper-close','paw:activity-open','paw:activity-panel','paw:activity-panel-hide','paw:home'].includes(channel);
+    if(!window || (!owner && !mini && !note && !dock && !guide && ![...guestWindows.values()].includes(window)) ||
+      (mini && (!miniChannel || (channel==='paw:command' && !/^work-/.test(args[0]?.type || '')) || (channel==='paw:home' && args[0]!=='work'))) ||
+      (channel.startsWith('paw:helper-')&&!owner&&!mini&&!dock&&!guide) ||
+      (note && channel!=='paw:state') ||
+      (dock && !['paw:state','paw:activity-open','paw:activity-panel','paw:helper-guide'].includes(channel)) ||
+      (guide && !['paw:state','paw:helper-settings','paw:helper-close'].includes(channel)) ||
+      ((channel.startsWith('paw:card-') || channel.startsWith('paw:activity-') || channel.startsWith('paw:attention-')) && !owner && !mini && !dock))return {ok:false,error:tr('来源无效。')};
+    if(channel==='paw:command' && /^(play-|room-|work-)/.test(args[0]?.type || '') && !owner && !mini)return {ok:false,error:tr('来源无效。')};
     try {
       if (quitting) throw new Error("应用正在保存并退出。");
       return { ok: true, data: await handler(...args) };
@@ -835,6 +1034,8 @@ function register(channel, handler) {
   });
 }
 const allowed = new Set([
+  "play-start", "play-attempt", "play-finish", "room-place", "room-remove", "room-theme",
+  "work-pin", "work-bookmark", "work-read", "work-settings",
   "free-egg",
   "buy-egg",
   "hatch",
@@ -890,46 +1091,6 @@ else {
       }
       const upgraded = desktopUpgrade(store.state);
       if (upgraded !== store.state) await store.save(upgraded);
-      assistant = new AssistantService({ directory: app.getPath('userData'), safeStorage,
-        getPet: () => housePets(store.state).find(p => p.id === store.state.activePetId) || housePets(store.state)[0],
-        getLanguage: language, executeAction: executeAssistantAction, onChange: () => { if (!quitting) broadcast(); } });
-      await assistant.init();
-      const gpuInfo=await app.getGPUInfo('basic').catch(()=>({gpuDevice:[]}));
-      const localAcceleration=(process.platform==='darwin'&&process.arch==='arm64')||(gpuInfo.gpuDevice||[]).some(g=>[0x10de,0x1002].includes(g.vendorId));
-      const modelDirectory=path.join(app.getPath('userData'),'local-models');
-      localModels = new OllamaModels({
-        baseURL:'http://127.0.0.1:11534',
-        accelerated:localAcceleration,
-        catalog:new ModelCatalog({directory:modelDirectory,remote:!test}),
-        ...(!test?{runtime:new ManagedRuntime({directory:modelDirectory})}:{}),
-        getLanguage:language,
-        getSelected:()=>assistant.config.enabled?{name:assistant.config.model,provider:assistant.config.provider}:null,
-        getActive:()=>assistant.config.enabled&&assistant.config.provider==='ollama'&&assistant.config.baseURL===localModels.baseURL+'/v1'?assistant.config.model:null,
-        beforeRemove:model=>{if(assistant.config.provider==='ollama'&&assistant.config.model===model&&assistant.config.baseURL===localModels.baseURL+'/v1')assistant.cancel();},
-        onRemove:async model=>{if(assistant.config.provider==='ollama'&&assistant.config.model===model&&assistant.config.baseURL===localModels.baseURL+'/v1'){await assistant.configure({...assistant.config,enabled:false,provider:'',baseURL:'',model:''});assistant.endConversation();assistantBubble.hide();}},
-        ...(test && process.env.PAWPRINT_TEST_OLLAMA_URL ? { baseURL: process.env.PAWPRINT_TEST_OLLAMA_URL } : {}),
-        onChange: () => { if (!quitting) broadcast(); }, getGeneration: () => assistant.generation,
-        onUse: async (model, generation) => {
-          if (generation !== assistant.generation || assistant.busy) return false;
-          await assistant.configure({ ...assistant.config, enabled: true, provider: 'ollama', baseURL: localModels.baseURL + '/v1', model });
-          return true;
-        },
-      });
-      register('paw:assistant-models-refresh', force => localModels.refresh(force===true));
-      register('paw:assistant-model-download', async model => ({ models: await localModels.download(model), assistant: assistant.snapshot() }));
-      register('paw:assistant-model-remove',model=>localModels.remove(model));
-      register('paw:assistant-model-use', async model => ({ models: await localModels.use(model), assistant: assistant.snapshot() }));
-      register('paw:assistant-model-cancel', () => { localModels.cancel(); return localModels.snapshot(); });
-      register('paw:assistant-configure', input => assistant.configure(input));
-      register('paw:assistant-profile', (id, value) => assistant.profile(id, value));
-      register('paw:assistant-probe', () => assistant.probe());
-      register('paw:assistant-run', async text => {
-        if(assistant.config.provider==='ollama'&&assistant.config.baseURL===localModels.baseURL+'/v1')await localModels.ensureAvailable();
-        const petId = assistant.getPet()?.id;
-        const result = await assistant.run(text);
-        if (petId && assistant.getPet()?.id === petId) await enqueue(() => mutate({ type: "pet-interact", petId, kind: "chat" }));
-        return showAssistantReply(result);
-      });
       register('paw:companion-preview', () => {
         const pet = housePets(store.state).find(p => p.id === store.state.activePetId) || housePets(store.state)[0];
         if (!pet) throw new Error("请先选择一位小屋伙伴。");
@@ -940,12 +1101,6 @@ else {
           broadcast();
         }
         return snapshot();
-      });
-      register('paw:assistant-cancel', () => { assistant.cancel(); return assistant.snapshot(); });
-      register('paw:assistant-end', () => { assistantBubble.hide(); return assistant.endConversation(); });
-      register('paw:assistant-help', id => {
-        if (!Object.hasOwn(ASSISTANT_LINKS, id)) throw new Error('未知的模型指引。');
-        return shell.openExternal(ASSISTANT_LINKS[id]);
       });
       register('paw:card-create', async id => {
         const pet=store.state.pets.find(p=>p.id===id);if(!pet)throw new Error("请先选择一位伙伴。");
@@ -978,7 +1133,6 @@ else {
           !allowed.has(command.type)
         )
           throw new Error("操作无效。");
-        if (['select', 'garden', 'return-home', 'rename'].includes(command.type)) assistant?.cancel();
         const result = await enqueue(() => mutate(command));
         if (command.type === "connect") void refresh();
         return result;
@@ -1104,6 +1258,8 @@ else {
           throw new Error(
             "这个文件夹不包含 Codex 的 sessions 或 archived_sessions 记录。请选择 .codex 目录。",
           );
+        if(attentionBridge && attentionBridge.directory!==selected && store.state.settings.attentionEnabled){await attentionBridge.uninstall();await enqueue(()=>mutate({type:'attention-settings',enabled:false}));}
+        if(attentionBridge)attentionBridge.directory=selected;
         await enqueue(async () => {
           const next = structuredClone(store.state);
           next.settings.codexHome = selected;
@@ -1121,10 +1277,27 @@ else {
         return snapshot();
       });
       register("paw:home", (section) => {
-        createHome(section);
+        hideWorkPanel();createHome(section);
         return true;
       });
       register("paw:client", openClient);
+      register('paw:helper-guide',kind=>{if(kind!=='hooks')throw new Error('Invalid guide.');return showClientGuide(kind);});
+      register('paw:helper-close',()=>{setupGuideWindow?.hide();return true;});
+      register('paw:helper-settings',async kind=>{
+        if(kind==='hooks'){await shell.openExternal('codex://settings');let navigation='settings-only';if(process.platform==='darwin'&&!test){try{const result=await execute('/usr/bin/osascript',['-e',hooksSettingsScript()],{timeout:12000});if(result.stdout.trim()==='opened-hooks')navigation='opened-hooks';}catch{}}showClientGuide('hooks');setupGuideValue.navigation=navigation;broadcast();return {navigation};}
+        throw new Error('Invalid settings page.');
+      });
+      register('paw:attention-connect',async()=>{
+        const installed=await attentionBridge.install();await enqueue(()=>mutate({type:'attention-settings',enabled:true}));
+        await attentionBridge.configure(true);await activity?.refreshAttention();return {...installed,state:snapshot()};
+      });
+      register('paw:attention-disconnect',async()=>{let error;try{await attentionBridge.uninstall();}catch(e){error=e;}await attentionBridge.configure(false);await enqueue(()=>mutate({type:'attention-settings',enabled:false}));if(error)throw new Error('Reminders are stopped. Existing hooks.json could not be changed; remove Pawprint’s rules in your client if needed.');return snapshot();});
+      register("paw:activity-panel",createWorkPanel);
+      register("paw:activity-panel-hide",hideWorkPanel);
+      register("paw:activity-open", async (threadId) => {
+        try { return await openActivitySession(threadId); }
+        catch(error) { if(!test && !workMini?.isVisible())dialog.showErrorBox(tr("会话跳转失败"),tr(error.message));throw error; }
+      });
       register("paw:menu", () => {
         idleMenuOpen = true;
         buildMenu(menuTemplate()).popup({ window: floating, callback: () => {
@@ -1133,15 +1306,20 @@ else {
         } });
         return true;
       });
-      ipcMain.on("paw:pointer", (event, interactive) => {
-        if (
-          floating &&
-          !floating.isDestroyed() &&
-          event.sender === floating.webContents &&
-          typeof interactive === "boolean" &&
-          !dragOrigin
-        )
-          floating.setIgnoreMouseEvents(!interactive, { forward: true });
+      ipcMain.on('paw:pointer',(event,interactive)=>{
+        const target=event.sender===floating?.webContents?floating:event.sender===petControls?.webContents?petControls:null;
+        if(target&&!target.isDestroyed()&&typeof interactive==='boolean'&&!dragOrigin){if(target===petControls)setPetControlsInteractive(interactive);else target.setIgnoreMouseEvents(!interactive,{forward:true});}
+      });
+      ipcMain.on('paw:controls-press',(event,pressed)=>{
+        if(quitting||event.sender!==petControls?.webContents||typeof pressed!=='boolean')return;
+        petControlsPressed=pressed;clearTimeout(petControlsHideTimer);
+        if(pressed){setPetControlsInteractive(true);if(!petControlsRevealed){petControlsRevealed=true;broadcast();}}
+        else if(!petControlsHover.pet&&!petControlsHover.dock)schedulePetControlsHide();
+      });
+      ipcMain.on('paw:controls-hover',(event,hovered)=>{
+        if(quitting||screenLocked||suspended||typeof hovered!=='boolean'||!floating||floating.isDestroyed()||!floating.isVisible())return;
+        const surface=event.sender===floating?.webContents?'pet':event.sender===petControls?.webContents?'dock':null;
+        if(surface)hoverPetControls(surface,hovered);
       });
       ipcMain.on("paw:drag", (event, data) => {
         if (
@@ -1203,7 +1381,15 @@ else {
       });
       // The app's entry point must not depend on network or usage readers finishing.
       createTray();
-      app.on("activate", createHome);
+      if(store.fresh)createHome('home');
+      app.on('activate',()=>{
+        const point=screen.getCursorScreenPoint();
+        const onPet=[floating,petControls].some(w=>{
+          if(!w||w.isDestroyed()||!w.isVisible())return false;
+          const b=w.getBounds();return point.x>=b.x&&point.x<b.x+b.width&&point.y>=b.y&&point.y<b.y+b.height;
+        });
+        if(!onPet&&!petControlsPressed)createHome();
+      });
       trayWatch = setInterval(() => {
         if (!quitting && (!tray || tray.isDestroyed())) { createTray("missing"); broadcast(); }
       }, 10000);
@@ -1225,17 +1411,30 @@ else {
           : {}),
       });
       await lan.init();
-      activity = new CodexActivity({ onChange: activityChanged });
+      const clientDirectory=store.state.settings.codexHome || (test&&process.env.PAWPRINT_TEST_CODEX_HOME) || defaultCodexHome();
+      attentionBridge=new AttentionBridge({dataDirectory:app.getPath('userData'),directory:clientDirectory,execPath:process.execPath,relayPath:path.join(here,'attention-hook.cjs'),onEvents:receiveAttention,onChange:()=>{if(!quitting)broadcast();}});
+      await attentionBridge.configure(store.state.settings.attentionEnabled===true);
+      if(store.state.settings.attentionEnabled)await attentionBridge.prepareDefaults();
+      if(store.state.settings.activityEnabled&&!workState(store.state).recent.length){
+        const recent=await readRecentWorkChats(clientDirectory);
+        if(recent.length)await enqueue(()=>mutate({type:'_work-observe',recent}));
+      }
+      activity = new CodexActivity({ onChange: activityChanged,onAttention:receiveAttention });
       await syncActivity();
+      if(store.state.settings.attentionEnabled)await activity.refreshAttention();
+      await queue;await syncWorkTitles();
+      workTitlesTimer=setInterval(()=>{
+        void syncWorkTitles();
+        if(store.state.settings.attentionEnabled&&attentionBridge.snapshot().status==='question-only')void attentionBridge.prepareDefaults();
+      },10000);workTitlesTimer.unref?.();
       quota = new QuotaMonitor({ onChange: () => { if (!quitting) broadcast(); } });
       await syncQuota();
       updateTray();
       syncFloating();
       tickIdle();
       const pauseVisuals = () => {
-        assistant?.cancel();
-        activityBubble.hide();
-        floating?.hide();
+        activityBubble.hide();hideWorkPanel();hideWorkNote();
+        floating?.hide();hidePetControls();setupGuideWindow?.hide();
         for (const guest of guestWindows.values()) guest.hide();
         idleDirector.reset(Date.now());
       };
@@ -1288,12 +1487,12 @@ else {
     if (process.platform !== "darwin" && !tray) app.quit();
   });
   app.on("before-quit", (event) => {
-    localModels?.close();
-    localModels?.cancel();
+    hideWorkNote();workMini?.destroy();workNoteWindow?.destroy();petControls?.destroy();setupGuideWindow?.destroy();
     activityBubble.close();
-    assistantBubble.close();
-    clearTimeout(assistantBubbleTimer);
-    clearInterval(interval);
+    companionBubble.close();
+    clearTimeout(companionBubbleTimer);
+    clearTimeout(petControlsHideTimer);
+    clearInterval(interval);clearInterval(workTitlesTimer);
     clearInterval(trayWatch);
     clearTimeout(idleTimer);
     clearTimeout(socialTimer);
@@ -1301,7 +1500,7 @@ else {
       event.preventDefault();
       void rememberPosition();
       quitting = true;
-      void Promise.all([queue, assistant?.close(), lan?.close(), activity?.close(), quota?.close()]).finally(() => app.quit());
+      void Promise.all([workTitlesPending, queue, attentionBridge?.close(), lan?.close(), activity?.close(), quota?.close()]).finally(() => app.quit());
     }
   });
 }

@@ -217,9 +217,9 @@ test('companion growth persists, counts interaction days once and previews a qui
  p.companion={version:1,counts:{touch:20,play:5,chat:25,night:0},days:[...p.activeDays],daily:{date:dayKey(now),touch:true},lastInteractionAt:now-3600000};await writeFile(path.join(dir,'save-v1.json'),JSON.stringify(state));
  let app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:dir,PAWPRINT_TEST_LAN:'1',PAWPRINT_TEST_CODEX_HOME:path.join(dir,'no-history')}});
  try{
-  const home=await openHome(app,'home');await expect(home.getByTestId('companion-profile')).toContainText('默契伙伴');await expect(home.getByTestId('companion-profile')).toContainText('聊天 25 天');
+  const home=await openHome(app,'home');await expect(home.getByTestId('companion-profile')).toContainText('默契伙伴');await expect(home.getByTestId('companion-profile')).toContainText('摸摸 20 天');await expect(home.getByTestId('companion-profile')).not.toContainText('聊天 25 天');
   for(let i=0;i<5;i++){const r=await home.evaluate(id=>window.pawprint.command({type:'pet-interact',petId:id,kind:'touch'}),p.id);expect(r.ok).toBe(true);}
-  const current=(await home.evaluate(()=>window.pawprint.getState())).data;expect(current.pets[0].companion.counts.touch).toBe(20);expect(current.balance).toBe(state.balance);
+  const current=(await home.evaluate(()=>window.pawprint.getState())).data;expect(current.pets[0].companion.counts.touch).toBe(20);expect(current.pets[0].companion.counts.chat).toBe(25);expect(current.balance).toBe(state.balance);
   await home.getByTestId('companion-profile').screenshot({path:info.outputPath('growing-personality.png')});
   await home.evaluate(()=>window.pawprint.showHome('settings'));
   await home.getByRole('button',{name:'试试打个招呼',exact:true}).click();

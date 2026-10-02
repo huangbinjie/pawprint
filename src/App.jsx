@@ -32,17 +32,23 @@ import {
   Sprout,
   Wind,
   MoreHorizontal,
+  List,
   MessageCircle,
+  BellRing,
   GripHorizontal,
   Music,
   Wifi,
 } from "lucide-react";
+import PetControls from "./components/PetControls.jsx";
+import ClientSetupGuide from "./components/ClientSetupGuide.jsx";
+import WorkMini, {WorkNote} from "./components/WorkMini.jsx";
+import WorkPanel from "./components/WorkPanel.jsx";
+import PlayRoom from "./components/PlayRoom.jsx";
 import CompanionProfile from "./components/CompanionProfile.jsx";
 import Cat from "./components/Cat.jsx";
 import Egg from "./components/Egg.jsx";
 import TalentRoom from "./components/TalentRoom.jsx";
 import PetSizeControl from "./components/PetSizeControl.jsx";
-import AssistantSettings from "./components/AssistantSettings.jsx";
 import QuotaSettings from "./components/QuotaSettings.jsx";
 import SocialScene from "./components/SocialScene.jsx";
 import SkillOdds from "./components/SkillOdds.jsx";
@@ -87,12 +93,16 @@ const tabs = [
   ["collection", PawPrint, "宠物图鉴"],
   ["garden", Leaf, "后花园"],
   ["talents", Music, "才艺小剧场"],
+  ["work", MessageCircle, "工作会话"],
+  ["play", Sparkles, "玩耍与房间"],
   ["nearby", Wifi, "附近的小屋"],
   ["genes", Dna, "基因图鉴"],
   ["breed", Heart, "繁育计划"],
   ["usage", ChartNoAxesCombined, "用量与钱包"],
 ];
 const titles = {
+  work:["工作会话","记住下一步，轻松回到工作。"],
+  play:["玩耍与房间","一小会儿陪伴，慢慢变得更默契。"],
   home: ["我的小屋", "一点点努力，一点点长大。"],
   collection: ["宠物图鉴", "每一份不同，都有迹可循。"],
   talents: ["才艺小剧场", "每一只，都有自己的拿手好戏。"],
@@ -135,7 +145,11 @@ export default function App() {
   const guestId = window.location.hash.startsWith("#guest:")
     ? window.location.hash.slice(7)
     : null;
+  const isControls=window.location.hash==="#petcontrols",isSetupGuide=window.location.hash==="#clientsetup";
+  const isWorkMini=window.location.hash==="#workmini",isWorkNote=window.location.hash==="#worknote";
   const isFloating = window.location.hash === "#floating";
+  const controlsRevealed=useRef(false);
+  controlsRevealed.current=Boolean(state?.controlsRevealed);
   const todayKey = dayKey(tick);
   const reward = state ? availableReward(state, tick) : 0;
   useEffect(
@@ -146,17 +160,22 @@ export default function App() {
     [],
   );
   useEffect(() => {
-    if (!api || !isFloating) return;
+    if (!api || !(isFloating||isControls)) return;
     let previous = null;
+    let previousHover=null;
+    const hover=active=>{if(isControls||active!==previousHover||(active&&!controlsRevealed.current)){api.setControlsHovered(active);previousHover=active;}};
     const update = (active) => {
-      if (active !== previous) {
+      if (isControls || active !== previous) {
         api.setInteractive(active);
         previous = active;
       }
     };
-    const move = (event) =>
-      update(Boolean(event.target.closest("[data-interactive]")));
-    const leave = () => update(false);
+    const move = (event) => {
+      const interactive=Boolean(event.target.closest("[data-interactive]"));
+      update(interactive);
+      hover(isFloating?Boolean(event.target.closest('.float-cat-button')):Boolean(event.target.closest('.pet-control-dock'))&&(controlsRevealed.current||interactive));
+    };
+    const leave = () => {update(false);hover(false);};
     document.addEventListener("mousemove", move);
     document.addEventListener("mouseleave", leave);
     update(false);
@@ -164,7 +183,7 @@ export default function App() {
       document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseleave", leave);
     };
-  }, [isFloating]);
+  }, [isFloating,isControls]);
   useEffect(() => {
     if (!api) return;
     api
@@ -273,6 +292,10 @@ export default function App() {
         <p>{toast?.text || "正在打开你的小屋…"}</p>
       </div>
     );
+  if(isControls)return <PetControls state={state}/>;
+  if(isSetupGuide)return <ClientSetupGuide state={state}/>;
+  if(isWorkMini)return <WorkMini state={state} command={command} working={working} error={toast?.text} onError={text=>setToast({text,error:true})}/>;
+  if(isWorkNote)return <WorkNote note={state.workNote}/>;
   const residents = housePets(state);
   const resting = gardenPets(state);
   const pet = residents.find((p) => p.id === state.activePetId) || residents[0];
@@ -305,7 +328,9 @@ export default function App() {
     state.performance?.petId === pet.id &&
     !state.performance.guestId &&
     tick - state.performance.at < (state.performance.duration || 6000);
-  const activityWorking = state.activity?.status === "running";
+  const needsAttention=state.settings.attentionEnabled===true && state.work?.recent?.some(r=>r.attention&&!r.attention.seen);
+  const waitingChat=state.work?.recent?.filter(r=>r.attention).sort((a,b)=>Number(a.attention.seen)-Number(b.attention.seen)||b.attention.at-a.attention.at)[0];
+  const activityWorking = state.activity?.status === "running" && !needsAttention;
   const idle = (activityWorking && !manualChase) || playing || petting ? { mode: "rest", facing: 1, edge: "bottom", gaze: playing || petting ? null : state.idle?.gaze } : state.idle || { mode: "rest", facing: 1, edge: "bottom" };
   const desktopStyle = { width: 220, height: 242, transform: `scale(${state.displayScale || 1})`, transformOrigin: "top left", "--desktop-pet-scale": state.displayScale || 1 };
   async function playSkill(id, skillId) {
@@ -495,7 +520,7 @@ export default function App() {
             <div className={`idle-actor edge-${idle.edge || "bottom"} behavior-${idle.mode} phase-${idle.phase || "rest"} peek-${idle.peekSide || "left"}`} key={`${idle.mode}-${idle.startedAt}`} style={{ "--pet-facing": idle.facing || 1, "--look-x": (idle.gaze?.x || 0) * (idle.facing || 1), "--look-y": idle.gaze?.y || 0 }}>
             <Cat
               genome={pet.genome}
-              className={`${activityWorking && !manualChase && !playing && !petting ? "working" : `idle-pose-${idle.mode}`} ${idle.gaze ? "cursor-attention" : ""}`}
+              className={`${needsAttention?"attention-waiting ":""}${activityWorking && !manualChase && !playing && !petting ? "working" : `idle-pose-${idle.mode}`} ${idle.gaze ? "cursor-attention" : ""}`}
               mood={petting ? "happy" : "idle"}
               talentId={playing && !state.performance.skillId ? pet.talent.id : idle.mode === "talent" ? idle.talentId : null}
               skillId={playing ? state.performance.skillId : !["ball", "toyroll"].includes(idle.mode) && skillById(idle.mode) ? idle.mode : null}
@@ -610,6 +635,8 @@ export default function App() {
               <span className="edition">LOCAL COMPANION</span>
             )}
           </div>
+          {tab === "work" && <WorkPanel state={state} command={command} working={working} onError={text=>setToast({text,error:true})}/>}
+          {tab === "play" && <PlayRoom state={state} command={command} working={working} now={tick}/>}
           {tab === "home" && (
             <>
               <div className="home-grid">
@@ -1547,7 +1574,6 @@ export default function App() {
                   if (!r.ok) setToast({text:r.error,error:true});
                 }}>{state.update.release.manual ? (state.settings.language === "en" ? `Open download page for v${state.update.release.version}` : `打开 v${state.update.release.version} 下载页`) : (state.settings.language === "en" ? `Update to v${state.update.release.version}` : `立即更新到 v${state.update.release.version}`)}</button>}
               </section>
-              <AssistantSettings state={state} />
               <QuotaSettings state={state} now={tick} working={working} onCommand={command} onRecover={async () => {
                 const r = await api.recoverTray();
                 if (r.ok) setState(r.data); else setToast({ text: r.error, error: true });
@@ -1672,8 +1698,8 @@ export default function App() {
                 <div className="setting-row">
                   <div>
                     <strong>Codex 会话联动</strong>
-                    <p>开工时陪伴，收到本轮结束记录后表演出生才艺。气泡 8 秒后消失，不发币、不额外调用模型。</p>
-                    <p>开启后从新一轮会话开始监听本机记录，不补播历史。等待回复和失败状态暂未接入；长时间没有记录时停止工作动作，不猜测完成。</p>
+                    <p>开工时陪伴，明确区分本轮回复结束、已停止和状态未知。没有其他进行中或状态不明的会话时才庆祝；不发币、不调用模型。</p>
+                    <p>只观察开启后的新记录，不补播历史，也不把回复结束当作整个任务完成。读取不到开始或记录中断时显示未知；失败和审批状态暂不推断。</p>
                   </div>
                   <button role="switch" aria-label="Codex 会话联动"
                     aria-checked={state.settings.activityEnabled === true}
@@ -1697,8 +1723,9 @@ export default function App() {
                   </button>
                 </div>
                 <p className="setting-footnote" data-testid="activity-status">
-                  {{ off: "会话联动已关闭", connecting: "正在连接本地记录…", idle: "已连接，等待新一轮会话", running: `陪伴中 · ${state.activity?.activeCount || 0} 个会话`, unknown: "近期没有新记录，当前状态未知", unavailable: "无法读取会话记录，请检查上方目录；会自动重试" }[state.activity?.status || "off"]}
-                  。当前支持本机 Codex，不支持 ChatGPT 桌面端或网页版。切换开关后从新会话开始。
+                  {{ off: "会话联动已关闭", connecting: "正在连接本地记录…", idle: "已连接，等待新状态记录", completed: "最近一轮回复已结束", stopped: "最近一轮已停止", running: `陪伴中 · ${state.activity?.activeCount || 0} 个会话`, unknown: "记录不完整，暂不能确认当前状态", unavailable: "无法读取会话记录，请检查上方目录；会自动重试" }[state.activity?.status || "off"]}
+                  {" · "}{t("仅显示本机 Codex 的新记录。返回入口打开最近有状态更新的会话，不发送消息。")}
+                  {state.activity?.target?.threadId && <button className="text-button" onClick={async()=>{const r=await api.openWorkSession();if(!r.ok)setToast({text:r.error,error:true});}}>{t("返回最近 Codex 会话")}</button>}
                 </p>
                 <div className="setting-row">
                   <div>

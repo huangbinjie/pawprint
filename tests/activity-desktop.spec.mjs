@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, appendFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { seedMatureCompanion } from "./fixtures/game.mjs";
-import { openHome } from "./helpers.mjs";
+import { openHome,petControls,revealPetControls } from "./helpers.mjs";
 
 test("Codex lifecycle drives transient pet feedback without spending or replaying history", async ({}, info) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "pawprint-activity-ui-"));
@@ -14,10 +14,12 @@ test("Codex lifecycle drives transient pet feedback without spending or replayin
   await mkdir(folder, { recursive: true });
   const file = path.join(folder, "session.jsonl");
   const row = (type, extra = {}) => JSON.stringify({ timestamp: new Date().toISOString(), type: "event_msg", payload: { type, turn_id: "ui-turn", ...extra } }) + "\n";
-  await writeFile(file, row("task_started") + row("task_complete"));
+  const threadId="01a0f1ea-4534-7651-b950-045a233fe631";
+  await writeFile(file, JSON.stringify({type:"session_meta",payload:{id:threadId,instructions:"PRIVATE"}})+"\n"+row("task_started")+row("task_complete"));
   const app = await electron.launch({ args: ["."], env: { ...process.env, PAWPRINT_TEST_MODE: "1", PAWPRINT_TEST_DATA: profile, PAWPRINT_TEST_CODEX_HOME: codex, PAWPRINT_TEST_LAN: "1" } });
   try {
     const floating = await app.firstWindow();
+    const controls=await petControls(app);
     const home = await openHome(app, "settings");
     const before = (await home.evaluate(() => window.pawprint.getState())).data;
     const petBounds=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('#floating')).getBounds());
@@ -30,7 +32,8 @@ test("Codex lifecycle drives transient pet feedback without spending or replayin
     });
     await home.getByRole("switch", { name: "Codex 会话联动", exact: true }).click();
     await home.getByRole("switch", { name: "显示大致主题", exact: true }).click();
-    await expect(home.getByTestId("activity-status")).toContainText("等待新一轮会话");
+    await expect(home.getByRole("switch",{name:"显示大致主题",exact:true})).toBeEnabled();
+    await expect(home.getByTestId("activity-status")).toContainText("等待新状态记录");
     expect(app.windows().some(w=>w.url().startsWith("data:text/html"))).toBe(false);
     await appendFile(file, row("task_started") + row("item_completed", { item: { type: "UserMessage", content: [{ type: "Text", text: "帮我修复 SECRET 的错误" }] } }));
     await expect.poll(()=>app.windows().some(w=>w.url().startsWith("data:text/html")),{timeout:10000}).toBe(true);
@@ -45,6 +48,13 @@ test("Codex lifecycle drives transient pet feedback without spending or replayin
     expect(placement.pet).toEqual(petBounds);
     expect(placement.bubble.y+placement.bubble.height).toBeLessThanOrEqual(placement.pet.y-8);
     await bubble.screenshot({path:info.outputPath('codex-bubble.png'),omitBackground:true});
+    await app.evaluate(({shell})=>{shell.openExternal=async url=>{globalThis.pawOpenedWork=url;};});
+    await revealPetControls(app);await expect(controls.getByRole('button',{name:'最近 Codex 会话',exact:true})).toBeVisible();
+    await controls.getByRole('button',{name:'最近 Codex 会话',exact:true}).click();
+    await expect.poll(()=>app.windows().some(w=>w.url().endsWith('#workmini'))).toBe(true);
+    const workMini=app.windows().find(w=>w.url().endsWith('#workmini'));
+    await workMini.getByRole('button',{name:'返回关注会话',exact:true}).click();
+    await expect.poll(()=>app.evaluate(()=>globalThis.pawOpenedWork)).toBe(`codex://threads/${threadId}`);
     await expect(floating.locator(".cat.working")).toBeVisible();
     expect(await floating.locator(".cat-body").evaluate(el => getComputedStyle(el).animationName)).toBe("companion-work");
     await floating.screenshot({ path: info.outputPath("codex-working.png"), omitBackground: true });
@@ -62,6 +72,13 @@ test("Codex lifecycle drives transient pet feedback without spending or replayin
     await expect.poll(()=>app.evaluate(({BrowserWindow})=>{
       const b=BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Pawprint Activity Bubble');return b?.isVisible() ?? false;
     }),{timeout:12000}).toBe(false);
+    await expect(home.getByTestId('activity-status')).toContainText('最近一轮回复已结束');
+    await revealPetControls(app);await expect(controls.getByRole('button',{name:'最近 Codex 会话',exact:true})).toBeVisible();
+    await home.evaluate(()=>window.pawprint.command({type:'language',value:'en'}));
+    await expect(home.getByTestId('activity-status')).toContainText('The latest reply has ended');
+    await revealPetControls(app);await expect(controls.getByRole('button',{name:'Recent Codex chats',exact:true})).toBeVisible();
+    await floating.screenshot({path:info.outputPath('codex-return-english.png'),omitBackground:true});
+    await home.evaluate(()=>window.pawprint.command({type:'language',value:'zh'}));
     const hiddenCalls=await app.evaluate(()=>globalThis.pawBubbleHideCalls);
     await floating.waitForTimeout(650);
     expect(await app.evaluate(()=>globalThis.pawBubbleHideCalls)).toBe(hiddenCalls);
@@ -74,4 +91,22 @@ test("Codex lifecycle drives transient pet feedback without spending or replayin
     console.log('Bubble diagnostic:',JSON.stringify(info));
     throw error;
   } finally { await app.close(); }
+});
+
+test('parallel rounds do not celebrate one ended reply or a stopped round',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'paw-work-parallel-')),profile=path.join(root,'profile'),codex=path.join(root,'codex');await seedMatureCompanion(profile);await mkdir(path.join(codex,'sessions'),{recursive:true});
+ const ids=['01a0f1ea-4534-7651-b950-045a233fe631','01a0f5f7-5a51-7483-9fe6-9e028bc08226'];const files=ids.map((_,i)=>path.join(codex,'sessions',`${i}.jsonl`));
+ for(let i=0;i<2;i++)await writeFile(files[i],JSON.stringify({type:'session_meta',payload:{id:ids[i]}})+'\n');
+ const row=(type,id)=>JSON.stringify({type:'event_msg',timestamp:new Date().toISOString(),payload:{type,turn_id:id}})+'\n';
+ const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:profile,PAWPRINT_TEST_CODEX_HOME:codex,PAWPRINT_TEST_LAN:'1'}});
+ try{
+  const home=await openHome(app,'settings');await home.getByRole('switch',{name:'Codex 会话联动',exact:true}).click();await expect(home.getByRole('switch',{name:'Codex 会话联动',exact:true})).toBeEnabled();
+  await appendFile(files[0],row('task_started','one'));await appendFile(files[1],row('task_started','two'));
+  await expect.poll(async()=>(await home.evaluate(()=>window.pawprint.getState())).data.activity.activeCount).toBe(2);
+  await appendFile(files[0],row('task_complete','one'));
+  await expect.poll(async()=>(await home.evaluate(()=>window.pawprint.getState())).data.activity.activeCount).toBe(1);
+  let state=(await home.evaluate(()=>window.pawprint.getState())).data;expect(state.activity.status).toBe('running');expect(state.performance?.source).not.toBe('activity');
+  await appendFile(files[1],row('turn_aborted','two'));await expect.poll(async()=>(await home.evaluate(()=>window.pawprint.getState())).data.activity.status).toBe('stopped');
+  state=(await home.evaluate(()=>window.pawprint.getState())).data;expect(state.performance?.source).not.toBe('activity');
+ }finally{await app.close();}
 });

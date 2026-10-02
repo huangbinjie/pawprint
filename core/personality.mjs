@@ -47,7 +47,6 @@ export function personalityDescription(pet) {
 export function companionLine(pet, language = 'zh', variation = 0) {
   const p = companionPersonality(pet), {scores,interactionDays:c}=p, en=language==='en';
   if (variation % 2 === 0) {
-    if (scores.talkative>=.65 && c.chat>=3) return en ? `We've chatted on ${c.chat} days. I'd love to hear a little more today.` : `我们有 ${c.chat} 天聊过天啦，今天也想听你说两句。`;
     if (scores.energy>=.65 && c.play>=3) return en ? `We've played together on ${c.play} days. Fancy another little game?` : `你有 ${c.play} 天陪我玩啦，今天再玩一小会儿？`;
     if (scores.affection>=.68 && c.touch>=3) return en ? `You've petted me on ${c.touch} days. A little pet when you're free?` : `你有 ${c.touch} 天摸摸我啦，忙完了再摸摸？`;
     if (p.days>=3) {

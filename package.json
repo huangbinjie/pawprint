@@ -1,6 +1,6 @@
 {
   "name": "pawprint-desktop",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "private": true,
   "repository": "https://github.com/huangbinjie/pawprint",
   "homepage": "https://huangbinjie.github.io/pawprint/",
@@ -38,6 +38,7 @@
       "entitlementsInherit": "build/entitlements.mac.plist",
       "icon": "build/icon.png",
       "extendInfo": {
+        "NSAppleEventsUsageDescription": "Open the Hooks page in your client when you choose Open Hooks in client.",
         "NSLocalNetworkUsageDescription": "在同一局域网发现同事的小屋，邀请宠物串门和繁育；不会共享聊天内容或使用记录。",
         "NSBonjourServices": [
           "_pawprint._tcp"

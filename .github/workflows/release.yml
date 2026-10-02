@@ -112,6 +112,18 @@ jobs:
           - Improved QR visiting-card spacing and image import buttons; the native file input stays hidden.
           - Clearer usage typography and complete English text for populated reports, pricing states and daily tables.
           NOTES
+          elif [ "$GITHUB_REF_NAME" = v0.13.0 ]; then
+            cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+
+          ## Pawprint 0.13.0 — Your work has company
+          - Hover over the cat to return to your active or pinned Codex chat. Recent chats show real titles and projects; keep a next-step bookmark beside each one.
+          - An amber bell stays when a local question or approval needs you. macOS prepares seven clearly labeled Pawprint hooks; review and trust them in the client. Pawprint never approves or answers for you.
+          - Keep unread reply markers, choose a gentle sound or system notification, and use Do Not Disturb. A reply ending is not treated as the whole task finishing.
+          - New installs start in English with local usage, quota, session feedback and quiet reminders enabled. Five recent chats load immediately; existing preferences and save data are preserved.
+          - Quiet circular hover controls retain 44 px click targets, including at half pet scale. Held presses and repeat clicks stay reliable without opening the home accidentally.
+          - Take a short play break, build your cat's bond and decorate its room with earned toys and keepsakes.
+          - API chat, local model management and voice shortcuts are retired. Previous provider files remain untouched and are no longer loaded. No API key is needed for the pet or work helpers.
+          NOTES
           fi
           gh release create "$GITHUB_REF_NAME" artifacts/* --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft
 

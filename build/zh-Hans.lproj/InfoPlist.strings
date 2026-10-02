@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>点击打开客户端 Hooks 时，导航到客户端的 Hooks 设置页面。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>在同一局域网发现同事的小屋，邀请宠物串门和繁育；不会共享聊天内容或使用记录。</string>
 </dict>

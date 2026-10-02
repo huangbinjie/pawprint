@@ -6,7 +6,7 @@ export async function seedMatureCompanion(directory, now = Date.now()) {
   const born = now - 2 * 86400000;
   let state = initialState(born);
   // Keep interaction fixtures stationary until a test explicitly enables roaming.
-  state.settings.idleEnabled = false;
+  Object.assign(state.settings,{idleEnabled:false,language:'zh',activityEnabled:false,activityTopics:false,attentionEnabled:false,quotaEnabled:false});
   const act = (command, time) =>
     (state = transition(state, command, {
       now: time,

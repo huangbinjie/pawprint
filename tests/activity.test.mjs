@@ -128,3 +128,58 @@ test("activity preferences change no economic state", () => {
   assert.deepEqual(after, { ...before, settings: { ...before.settings, activityEnabled: true, activityTopics: false } });
   assert.throws(() => transition(before, { type: "activity", enabled: "true" }, { now: time }));
 });
+
+const thread='01a0f1ea-4534-7651-b950-045a233fe631';
+const child='01a0f5f7-5a51-7483-9fe6-9e028bc08226';
+const meta=(id,extra={})=>JSON.stringify({type:'session_meta',payload:{id,instructions:'PRIVATE instructions',...extra}})+'\n';
+
+test('last reply-ended state and exact chat target survive the transient bubble without exposing paths',()=>{
+ const tracker=new ActivityTracker({since:time});tracker.bind('/PRIVATE/path',thread);tracker.consume(event('task_started'),' /ignored',time);
+ tracker.consume(event('task_started','linked'),'/PRIVATE/path',time);tracker.consume(event('task_complete','linked'),'/PRIVATE/path',time);
+ tracker.consume(event('turn_aborted','a'),' /ignored',time);
+ const value=tracker.snapshot(time+9000);assert.equal(value.event,null);assert.equal(value.status,'stopped');assert.ok(!JSON.stringify(value).includes('/PRIVATE'));
+ const one=new ActivityTracker({since:time});one.bind('/PRIVATE/path',thread);one.consume(event('task_started'),'/PRIVATE/path',time);one.consume(event('task_complete'),'/PRIVATE/path',time);
+ assert.equal(one.snapshot(time+9000).status,'completed');assert.equal(one.snapshot(time+9000).target.threadId,thread);assert.equal(one.snapshot(time+31*60000).target,null);
+});
+test('progress without an observed start is unknown; a later explicit end does not trigger celebration',()=>{
+ const tracker=new ActivityTracker({since:time});tracker.bind('source',thread);tracker.consume(event('token_count'),'source',time);
+ assert.equal(tracker.snapshot(time).status,'unknown');assert.equal(tracker.snapshot(time).event,null);
+ tracker.consume(event('task_complete'),'source',time);assert.equal(tracker.snapshot(time).status,'completed');assert.equal(tracker.snapshot(time).event,null);
+});
+test('a file gap clears an old completion and requires new evidence',()=>{
+ const tracker=new ActivityTracker({since:time});tracker.bind('source',thread);tracker.consume(event('task_started'),'source',time);tracker.consume(event('task_complete'),'source',time);
+ tracker.forget('source',time+1,true);tracker.bind('source',thread);const value=tracker.snapshot(time+1);assert.equal(value.status,'unknown');assert.equal(value.event,null);assert.equal(value.target.threadId,thread);
+ tracker.bind('source',child);assert.equal(tracker.snapshot(time+1).target.threadId,child);
+});
+test('known session mirrors cannot double count the same turn',()=>{
+ const tracker=new ActivityTracker({since:time});tracker.bind('one',thread);tracker.bind('mirror',thread);tracker.consume(event('task_started'),'one',time);tracker.consume(event('task_started'),'mirror',time);assert.equal(tracker.snapshot(time).activeCount,1);
+ tracker.consume(event('task_complete'),'mirror',time);assert.equal(tracker.snapshot(time).status,'completed');const id=tracker.event.id;tracker.consume(event('task_complete'),'one',time);assert.equal(tracker.event.id,id);
+});
+test('tailer reads only the leaf identity; ancestor metadata cannot replace the return target',async t=>{
+ const {directory,file,watcher}=await fixture(t);await writeFile(file,meta(thread));await watcher.configure({directory,enabled:true});
+ await appendFile(file,meta(child)+event('task_started'));await watcher.poll();assert.equal(watcher.snapshot().target.threadId,thread);assert.ok(!JSON.stringify(watcher.snapshot()).includes('PRIVATE'));
+});
+test('new subagent files exclude inherited lifecycle records by the explicit ordinal',async t=>{
+ const {directory,file,watcher}=await fixture(t);await watcher.configure({directory,enabled:true});
+ const newFile=path.join(path.dirname(file),'child.jsonl');await writeFile(newFile,meta(child,{subagent_history_start_ordinal:3})+meta(thread)+event('task_started','parent')+event('task_started','child'));
+ await watcher.poll();assert.equal(watcher.snapshot().activeCount,1);assert.equal(watcher.snapshot().target.threadId,child);
+});
+
+test('invalid identities never produce a link and a fresh start clears the last ended state',()=>{
+ const tracker=new ActivityTracker({since:time});tracker.bind('source','new?prompt=bad');tracker.consume(event('task_started'),'source',time);assert.equal(tracker.snapshot(time).target,null);
+ tracker.consume(event('task_complete'),'source',time);assert.equal(tracker.snapshot(time).status,'completed');tracker.bind('source',thread);tracker.consume(event('task_started','new',time+1),'source',time+1);assert.equal(tracker.snapshot(time+1).status,'running');assert.equal(tracker.snapshot(time+1).lastOutcome,null);
+});
+
+test('topic preference changes preserve the current round and do not reset or replay lifecycle events',async t=>{
+ const {directory,file,watcher}=await fixture(t);await writeFile(file,meta(thread));await watcher.configure({directory,enabled:true,topics:false});
+ await appendFile(file,event('task_started'));await watcher.poll();const target=watcher.snapshot().target;
+ await watcher.configure({directory,enabled:true,topics:true});assert.equal(watcher.snapshot().status,'running');assert.deepEqual(watcher.snapshot().target,target);
+ await appendFile(file,event('task_complete'));await watcher.poll();assert.equal(watcher.snapshot().status,'completed');
+});
+
+test('one ended reply cannot conceal a different stale unresolved round',()=>{
+ const tracker=new ActivityTracker({since:time});tracker.bind('one',thread);tracker.bind('two',child);
+ tracker.consume(event('task_started','one'),'one',time);tracker.consume(event('task_started','two'),'two',time);
+ tracker.consume(event('token_count','one',time+121000),'one',time+121000);tracker.consume(event('task_complete','one',time+121001),'one',time+121001);
+ assert.equal(tracker.snapshot(time+121001).status,'unknown');assert.equal(tracker.snapshot(time+121001).uncertainCount,1);assert.equal(tracker.snapshot(time+121001).activeCount,0);
+});

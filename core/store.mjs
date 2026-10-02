@@ -1,3 +1,5 @@
+import { validPlayState } from './play.mjs';
+import { validWorkState } from './work.mjs';
 import { validCompanionProfile } from "./personality.mjs";
 import { mkdir, readFile, writeFile, rename, copyFile } from "node:fs/promises";
 import path from "node:path";
@@ -111,6 +113,9 @@ export function validateState(state) {
     throw new Error("Invalid active pet");
   if (state.pets.some(p => !validCompanionProfile(p.companion))) throw new Error("Invalid companion profile");
   if (state.companionNotes !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(state.companionNotes?.date || "") || !Number.isInteger(state.companionNotes.count) || state.companionNotes.count < 0 || state.companionNotes.count > 2 || !Number.isFinite(state.companionNotes.lastAt))) throw new Error("Invalid companion initiative history");
+  if ((state.settings.workReminder!==undefined && !["quiet","sound","system"].includes(state.settings.workReminder)) || (state.settings.workDnd!==undefined && typeof state.settings.workDnd!=="boolean")) throw new Error("Invalid work reminders");
+  if((state.settings.attentionEnabled!==undefined&&typeof state.settings.attentionEnabled!=='boolean'))throw new Error('Invalid client helper settings');
+  if (!validPlayState(state) || !validWorkState(state.work)) throw new Error("Invalid play or work state");
   let balance = 0;
   const entries = new Set();
   for (const row of [...state.ledger].reverse()) {
@@ -138,6 +143,7 @@ export class Store {
     this.state = null;
   }
   async load(now = Date.now()) {
+    this.fresh=false;
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     try {
       const original = JSON.parse(await readFile(this.file, "utf8"));
@@ -152,6 +158,7 @@ export class Store {
         throw new Error(
           "本地存档损坏或版本不受支持。原文件和 .bak 备份已保留，请勿删除，联系开发者恢复。",
         );
+      this.fresh=true;
       await this.save(initialState(now));
     }
     return this.state;

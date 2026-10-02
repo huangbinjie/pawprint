@@ -2,6 +2,18 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.13.0 — 2026-10-02
+
+- Work chats beside the cat: return to the active or pinned Codex chat, switch between recent chats with real titles and project names, and keep a local next-step bookmark.
+- Approval and question reminders: a quiet bell stays until a request is handled. macOS prepares clearly named Pawprint hooks; client review and trust remain manual. Structured local question records provide a fallback. Pawprint never approves or answers for you.
+- Reply reminders: persistent unread markers, optional gentle sound or system notification, and Do Not Disturb. Parallel or uncertain tasks suppress completion celebrations.
+- Quiet hover controls with fixed 44 px click targets, reliable held presses, release-outside cancellation and no accidental home opening.
+- New installs start in English with local usage, quota, session feedback, topic labels and quiet reminders enabled. Recent chat metadata loads immediately; existing preferences, pins, bookmarks, pets and wallets are retained.
+- Play and growth: three short games, per-pet practice and bond, unlockable decorations and a locally saved room.
+- Retire API chat, local model management and client voice shortcuts. Old provider files remain untouched and are no longer read; local personality and companionship remain.
+
+This public release includes the work developed in unpublished local previews numbered 0.12.2 through 0.13.12.
+
 ## 0.12.1
 
 - Automatically refresh model prices from models.dev, with a local cache and offline fallback. Match API-key models by the provider and model recorded by Codex.

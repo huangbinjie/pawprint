@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Open the Hooks page in your client when you choose Open Hooks in client.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Discover coworker homes on your local network and invite pets to visit or breed. Chat text and usage records are not shared.</string>
 </dict>

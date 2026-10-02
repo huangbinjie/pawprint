@@ -1,3 +1,4 @@
+import {defaultSettings} from './defaults.mjs';
 export const FLOAT_SIZE = { width: 220, height: 242 };
 export const petScale = settings => Number.isFinite(settings?.petScale) ? Math.max(.5, Math.min(1, settings.petScale)) : 1;
 export const scaledFloatSize = (scale = 1, width = FLOAT_SIZE.width) => ({ width: Math.round(width * scale), height: Math.round(FLOAT_SIZE.height * scale) });
@@ -5,7 +6,7 @@ export const scaledFloatSize = (scale = 1, width = FLOAT_SIZE.width) => ({ width
 export function desktopUpgrade(state) {
   const old = state.settings;
   const settings = {
-    ...old,
+    ...defaultSettings(old),
     ...(old.desktopShellVersion !== 1 ? { floating: true, desktopShellVersion: 1 } : {}),
     idleEnabled: typeof old.idleEnabled === 'boolean' ? old.idleEnabled : true,
     idleToys: typeof old.idleToys === 'boolean' ? old.idleToys : true,
@@ -51,4 +52,21 @@ export function bubblePosition(pet, area, bubble) {
   const left = pet.x - bubble.width - 8;
   if (left >= area.x) return { x: left, y };
   return { x, y: Math.max(area.y, Math.min(pet.y + pet.height + 8, area.y + area.height - bubble.height)) };
+}
+
+// Companion controls have their own hit target, bounded by the selected display.
+export function companionPanelBounds(pet, area, preferred) {
+  const width = Math.min(preferred.width, area.width);
+  const height = Math.min(preferred.height, area.height);
+  const position = bubblePosition(pet, area, { width, height });
+  return { ...position, width, height };
+}
+export function petControlsBounds(pet,area,count){
+  const width=Math.min(area.width,16+count*44+Math.max(0,count-1)*6),height=Math.min(56,area.height);
+  const x=Math.max(area.x,Math.min(Math.round(pet.x+(pet.width-width)/2),area.x+area.width-width));
+  const below=pet.y+pet.height+4;
+  if(below+height<=area.y+area.height)return {x,y:below,width,height};
+  const above=pet.y-height-4;
+  if(above>=area.y)return {x,y:above,width,height};
+  const pos=bubblePosition(pet,area,{width,height});return {...pos,width,height};
 }

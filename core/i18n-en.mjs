@@ -1,5 +1,34 @@
 // English UI catalog. Keys are original source messages; game data and IDs stay unchanged.
 export default {
+  "猫咪快捷操作":"Pet quick actions",
+  "Codex 需要你处理":"Codex needs your attention", "Codex 等你审批":"Codex needs your approval", "Codex 等你回答":"Codex has a question for you",
+
+  "返回当前 Codex 会话":"Return to current Codex chat",
+  "最近 Codex 会话":"Recent Codex chats",
+  "工作会话": "Work chats", "玩耍与房间": "Play & room", "记住下一步，轻松回到工作。": "Keep your next step close and return to work with ease.", "一小会儿陪伴，慢慢变得更默契。": "Little moments together, growing closer.", "工作会话与便签": "Work chats & bookmarks", "玩耍与小房间": "Play & small room",
+
+  "记录不完整，暂不能确认当前状态": "Records are incomplete; current status is uncertain",
+  "会话跳转失败": "Could not return to chat",
+  "返回最近 Codex 会话": "Return to recent Codex chat",
+  "当前没有可返回的 Codex 会话，请开启会话联动并等待新记录。": "No Codex chat is available yet. Enable conversation reactions and wait for a new record.",
+  "无法打开对应会话，请确认已安装新版 ChatGPT / Codex 桌面客户端。": "Could not open this chat. Check that the new ChatGPT / Codex desktop app is installed.",
+  "还有会话的状态暂不确定": "Another chat's status is uncertain",
+  "已连接，等待新状态记录": "Connected; waiting for new status records",
+  "最近一轮回复已结束": "The latest reply has ended",
+  "最近一轮已停止": "The latest turn was stopped",
+  "开工时陪伴，明确区分本轮回复结束、已停止和状态未知。没有其他进行中或状态不明的会话时才庆祝；不发币、不调用模型。": "Keep you company while Codex works, with distinct reply-ended, stopped and unknown states. Celebrate only when no other chats are running or uncertain. No coins or model calls.",
+  "只观察开启后的新记录，不补播历史，也不把回复结束当作整个任务完成。读取不到开始或记录中断时显示未知；失败和审批状态暂不推断。": "Only observes new records after enabling. A reply ending does not mean the whole task is finished. Missing starts or record gaps show as unknown; failure and approval states are not inferred.",
+  "仅显示本机 Codex 的新记录。返回入口打开最近有状态更新的会话，不发送消息。": "Shows new local Codex records only. Return opens the chat with the latest status update without sending a message.",
+
+  "API 聊天设置": "API chat settings",
+  "本地模型功能已下架，模型文件和配置已保留。请选择 API 服务。": "Local model features have been retired. Model files and settings are preserved. Choose an API provider.",
+
+  "模型下载多次中断，已下载部分会在下次重试时继续。请检查系统代理或网络。": "Model download was interrupted repeatedly. Partial downloads are retained for your next retry. Check your system proxy or network.",
+  "本地引擎下载无法连接代理，请检查系统代理后重试。": "Cannot download the local engine through the proxy. Check your system proxy and retry.",
+  "本地引擎下载无法连接 GitHub，请检查网络或系统代理后重试。": "Cannot connect to GitHub to download the local engine. Check your network or system proxy and retry.",
+  "本地引擎暂不支持当前系统代理类型，请使用 HTTP 或 SOCKS5 代理后重试。": "The local engine does not support this system proxy type. Use an HTTP or SOCKS5 proxy and retry.",
+  "系统代理地址无效，请检查代理设置。": "The system proxy address is invalid. Check your proxy settings.",
+
   "简体中文": "Simplified Chinese",
   "今日已定价费用": "Priced cost today",
   "今日待定价记录": "Unpriced records today",

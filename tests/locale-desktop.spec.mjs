@@ -68,7 +68,7 @@ test("floating canvas never scrolls; English covers all pages, menus and reactio
     const after=(await home.evaluate(()=>window.pawprint.getState())).data;
     expect(after.pets).toEqual(beforeUI.pets);expect(after.balance).toBe(beforeUI.balance);
     await home.getByRole('switch',{name:'Codex conversation reactions'}).click();
-    await expect(home.getByTestId('activity-status')).toContainText('Connected; waiting for the next turn');
+    await expect(home.getByTestId('activity-status')).toContainText('Connected; waiting for new status records');
     const event=type=>JSON.stringify({type:'event_msg',timestamp:new Date().toISOString(),payload:{type,turn_id:'locale-turn'}})+'\n';
     await appendFile(log,event('task_started'));
     await expect.poll(()=>app.windows().some(w=>w.url().startsWith('data:text/html')),{timeout:10000}).toBe(true);
