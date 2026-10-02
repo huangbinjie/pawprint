@@ -8,12 +8,15 @@ import {readWorkTitles,readRecentWorkChats} from '../electron/work-titles.mjs';
 import {initialState,transition} from '../core/game.mjs';
 import {validateState} from '../core/store.mjs';
 const id='01a0f1ea-4534-7651-b950-045a233fe631';
-async function fixture(t){const dir=await mkdtemp(path.join(os.tmpdir(),'paw-title-'));t.after(()=>rm(dir,{recursive:true,force:true}));return dir;}
+const writers=new Map();
+async function fixture(t){const dir=await mkdtemp(path.join(os.tmpdir(),'paw-title-'));t.after(async()=>{for(const db of writers.get(dir)||[])db.close();writers.delete(dir);await rm(dir,{recursive:true,force:true});});return dir;}
+// Windows keeps SQLite WAL/SHM files locked until their owning writers close.
+function writer(dir,file){const db=new DatabaseSync(file);writers.set(dir,[...(writers.get(dir)||[]),db]);return db;}
 test('explicit index titles are read without creating a database or deriving prompts',async t=>{
  const dir=await fixture(t);await writeFile(path.join(dir,'session_index.jsonl'),'{partial}\n'+JSON.stringify({id,thread_name:'Fix login error',preview:'PRIVATE',updated_at:'2026-10-02'})+'\n');const rows=await readWorkTitles(dir,[id,'bad?prompt']);assert.deepEqual(rows,[{threadId:id,title:'Fix login error'}]);await assert.rejects(access(path.join(dir,'state_5.sqlite')));assert.ok(!JSON.stringify(rows).includes('PRIVATE'));
 });
 test('read-only WAL database names match the sidebar and override stale index names',async t=>{
- const dir=await fixture(t),file=path.join(dir,'state_5.sqlite'),db=new DatabaseSync(file);t.after(()=>db.close());db.exec('PRAGMA journal_mode=WAL; CREATE TABLE threads (id TEXT PRIMARY KEY, name TEXT, cwd TEXT, title TEXT, first_user_message TEXT)');db.prepare('INSERT INTO threads VALUES (?,?,?,?,?)').run(id,'今日消耗的token为什么对不上','/projects/pawprint','PRIVATE full prompt','PRIVATE transcript');await writeFile(path.join(dir,'session_index.jsonl'),JSON.stringify({id,thread_name:'Old title'})+'\n');await writeFile(path.join(dir,'.codex-global-state.json'),JSON.stringify({'electron-workspace-root-labels':{'/projects/pawprint':'爪印'},private:'PRIVATE credential'}));
+ const dir=await fixture(t),file=path.join(dir,'state_5.sqlite'),db=writer(dir,file);db.exec('PRAGMA journal_mode=WAL; CREATE TABLE threads (id TEXT PRIMARY KEY, name TEXT, cwd TEXT, title TEXT, first_user_message TEXT)');db.prepare('INSERT INTO threads VALUES (?,?,?,?,?)').run(id,'今日消耗的token为什么对不上','/projects/pawprint','PRIVATE full prompt','PRIVATE transcript');await writeFile(path.join(dir,'session_index.jsonl'),JSON.stringify({id,thread_name:'Old title'})+'\n');await writeFile(path.join(dir,'.codex-global-state.json'),JSON.stringify({'electron-workspace-root-labels':{'/projects/pawprint':'爪印'},private:'PRIVATE credential'}));
  const before=await readFile(file),rows=await readWorkTitles(dir,[id]);assert.deepEqual(rows,[{threadId:id,title:'今日消耗的token为什么对不上',project:'爪印'}]);assert.deepEqual(await readFile(file),before);assert.ok(!JSON.stringify(rows).includes('PRIVATE'));
  db.prepare('UPDATE threads SET name=? WHERE id=?').run('Renamed chat',id);assert.equal((await readWorkTitles(dir,[id]))[0].title,'Renamed chat');
 });
@@ -25,7 +28,7 @@ test('metadata updates do not replace bookmarks, pinning, unread results or the 
 });
 
 test('startup metadata excludes archived chats and subagents without inventing unread outcomes',async t=>{
- const dir=await fixture(t),db=new DatabaseSync(path.join(dir,'state_5.sqlite'));t.after(()=>db.close());db.exec('CREATE TABLE threads (id TEXT PRIMARY KEY, updated_at INTEGER, archived INTEGER, source TEXT, first_user_message TEXT)');
+ const dir=await fixture(t),db=writer(dir,path.join(dir,'state_5.sqlite'));db.exec('CREATE TABLE threads (id TEXT PRIMARY KEY, updated_at INTEGER, archived INTEGER, source TEXT, first_user_message TEXT)');
  const ids=[id,'01a0f5f7-5a51-7483-9fe6-9e028bc08226','01a10440-119e-7497-bf8e-14c2b0f2f9a2'];
  db.prepare('INSERT INTO threads VALUES (?,?,?,?,?)').run(ids[0],1000,0,'vscode','PRIVATE');db.prepare('INSERT INTO threads VALUES (?,?,?,?,?)').run(ids[1],2000,1,'vscode','PRIVATE');db.prepare('INSERT INTO threads VALUES (?,?,?,?,?)').run(ids[2],3000,0,'{"subagent":{}}','PRIVATE');
  assert.deepEqual(await readRecentWorkChats(dir,4000000),[{threadId:id,at:1000000,kind:'unknown'}]);
