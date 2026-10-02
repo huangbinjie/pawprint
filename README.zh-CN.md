@@ -1,46 +1,76 @@
-# 爪印 · Pawprint
+<a id="pawprint"></a>
 
-[English](README.md) · [简体中文](README.zh-CN.md) · [主页](https://huangbinjie.github.io/pawprint/zh/) · [下载](https://github.com/huangbinjie/pawprint/releases/latest)
+# 爪印 Pawprint — 你的工作，有个小伙伴
 
-爪印是一款独立开发的 Codex 桌面宠物，提供 Apple 芯片 Mac 和 Windows x64 构建。它把本机 Codex 活动和 GPT 模型 token 用量化作一点点成长陪伴；同事的小伙伴还可以在局域网串门和繁育。
+**一点桌面陪伴，也帮你回到对的 Codex 会话。**
+
+[下载 v0.13.0](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.0) · [官网](https://huangbinjie.github.io/pawprint/zh/) · [English](README.md)
+
+爪印是一款独立开发的桌面伙伴，支持 Windows x64 和 Apple 芯片 Mac。猫咪随本机 Codex 活动成长，身边留着几个实用的工作入口。宠物、提醒和小游戏无需 API key，不额外发起模型请求。
 
 ![爪印的奶油色虎斑猫咪](site/pet.png)
 
-## 主要功能
+## 小小的爪子，实用的帮助
 
-- **悬浮宠物：** 常驻桌面，能感知本机 Codex 会话的工作与结束状态，也会眨眼、玩耍；外貌由基因决定。
-- **Codex 用量：** 从本机记录显示 token、按模型估算的费用，以及有每日上限的宠物币奖励；估算值不是订阅账单。
-- **菜单栏额度：** 有近期本机快照时，在图标旁显示 Codex 每周和 5 小时剩余额度；不是实时账号查询。
-- **基因与技能：** 领养宠物蛋、查看基因概率、培养技能，与其他宠物繁育新组合。
-- **附近的小屋：** 在局域网邀请同事串门，不分享聊天正文或使用记录。
+| 当你…… | 猫咪可以帮你…… |
+| --- | --- |
+| 回来接着工作 | 鼠标移到猫咪上，返回当前或固定会话；最近会话显示真实标题和项目。 |
+| Codex 需要你作决定 | 看见黄色铃铛，点一下回到等待审批或回答的会话。不会代你审批或回答。 |
+| 暂时放下一个任务 | 留一句下一步书签；回来时，猫咪旁边显示你的备注。 |
+| 切出去后错过回复 | 保留未读标记，也可选轻声或系统通知。安静提醒和勿扰都可用。 |
+| 想休息一小会儿 | 玩一轮短游戏，培养熟练度和亲密度，解锁玩具、纪念物和房间装饰。 |
 
-爪印是独立应用，与 OpenAI 没有官方关联。
+一轮回复结束不等于整个任务完成。还有并行任务或状态不明的会话时，不会提前庆祝。
+
+## 有自己模样的伙伴
+
+- **遗传外貌：** 毛色、眼睛、耳朵和尾巴由基因决定；可查概率、孵化和繁育新组合。
+- **安静陪伴：** 散步、玩球、看看光标，偶尔低频打招呼。普通按钮悬停才显示；有待处理请求时铃铛保持可见，点击范围不随宠物缩小。
+- **慢慢布置的房间：** 玩球、逗猫棒和捉迷藏积累成长。每天每只猫前 3 次成功练习可获得成长，进度与布置保存在本机。
+- **努力变成一点成长：** 本地 token 用量可以获得有上限的宠物币。费用是 API 等价估算，不是订阅账单或现金资产。
+- **见见小伙伴：** 分享二维码访问卡，或双方选择连接局域网小屋，邀请串门与繁育。
+
+![爪印小屋与猫咪的遗传特征](site/app-home.png)
+
+## 第一次打开，就能感受到
+
+新安装默认 **English**，开启本地用量、额度、会话联动、大致主题和安静提醒。首次加载最近会话，不补播历史回复；升级保留已有语言、提醒方式和主动关闭的选项。
+
+在小屋领养第一枚蛋，再移到猫咪上使用工作入口。想让返回按钮一直指向同一个任务，可以固定一个主会话。
+
+macOS 上发现 Codex 数据后，会自动准备 7 条带名称的 Hook。审批提醒仍需在客户端 **审核并信任“Pawprint ·”规则**；其他规则保留并备份。受支持的本地结构化提问记录也能提供提醒，无需 Hook 信任。原生 Hook 设置目前仅支持 macOS；返回会话需要兼容的 Codex 桌面客户端。
+
+## 用量留在手边
+
+查看最近 30 天 token、每日已定价费用，以及模型的输入、缓存读取／写入和输出明细。每周与 5 小时剩余额度来自近期本地快照，不是实时账号查询；Mac 显示在菜单栏，Windows 显示在托盘菜单。
+
+价格目录来自 [models.dev](https://models.dev/)，自动更新并保留离线缓存。通过 Codex 使用 API-key 模型时，按供应商和模型 ID 匹配；未知或不完整的价格会保留待定价标记。已定价用量可领取当天奖励，重复刷新不会重复发币；不完整或冲突记录会暂停兑换。
 
 ## 安装
 
-从 [Releases](https://github.com/huangbinjie/pawprint/releases/latest) 下载最新 Mac 压缩包，并对照附带文件核验 SHA-256。内测版有完整的临时封装签名，但没有 Apple Developer ID 签名和苹果公证。第一次打开时如果提示“Apple 无法验证开发者”，先点“完成”，再到「系统设置 → 隐私与安全性」对 Pawprint 点“仍要打开”并确认。如果提示“已损坏”，请停止安装并反馈该版本。细节见[Mac 内测签名说明](docs/RELEASE_SIGNING.md)。
+- [Windows 10/11 x64 安装包](https://github.com/huangbinjie/pawprint/releases/download/v0.13.0/Pawprint-0.13.0-win-x64-setup.exe)
+- [Apple 芯片 Mac 压缩包](https://github.com/huangbinjie/pawprint/releases/download/v0.13.0/Pawprint-0.13.0-mac-arm64.zip)
+- [更新说明与 SHA-256 文件](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.0)
+
+请核对附带的校验文件。Windows 内测包未签名，运行安装程序并保留已有数据。Mac 内测包有完整的临时封装签名，但未使用 Developer ID 和苹果公证。把 Pawprint 放入 Applications；若提示无法验证开发者，点“完成”，到「系统设置 → 隐私与安全性」选择“仍要打开”。若提示已损坏，请停止并反馈该版本。详见 [Mac 签名与安装](docs/RELEASE_SIGNING.md)及 [Windows 支持](docs/WINDOWS.md)。
+
+## 本地陪伴
+
+宠物、书签、房间和用量保存在本机。工作助手读取本地 Codex 记录，可选的大致主题在本地分类新消息；提醒日志不保留问题原文、工具参数或聊天正文。价格目录和更新检查会使用现有网络来源；局域网串门可自行选择开启。
+
+v0.13.0 已下架 API 聊天、本地模型管理和客户端语音入口。旧供应商配置保留，不再加载。见 [下架说明](docs/ASSISTANT.md)。
+
+爪印是独立应用，与 OpenAI 无官方关联；不读取浏览器里的 ChatGPT 对话，不替你作决定。
 
 ## 开发
 
-需要 Node.js 22.12+；桌面版支持 macOS 和 Windows 10/11 x64 构建。
+需要 Node.js 22.12+。
 
 ```sh
 npm ci
 npm run dev
 ```
 
-`npm test` 运行核心检查，`npm run package:local` 生成带完整临时签名的 Apple 芯片包。发布流程会先核对整个应用签名。推送版本 tag 后，GitHub Actions 自动发布 Mac 安装包；`site/` 更新后自动部署 GitHub Pages。
+`npm test` 检查核心逻辑，`npm run test:ui` 检查桌面交互。`npm run package:local` 构建临时签名的 Apple 芯片包；在 Windows 上运行 `npm run package:win` 构建 x64 安装包。版本 tag 构建两个平台并在检查通过后发布；`site/` 的变更通过 GitHub Pages 部署。
 
-宠物数据保存在本机。目前没有账号、云同步、现金充值或在线交易。
-
-版本历史见 [更新记录](CHANGELOG.md)，详细规则见 [产品说明](docs/PRODUCT.md)。
-
-## Windows
-
-运行 `npm run package:win` 生成 `release/Pawprint-<版本>-win-x64-setup.exe`。Windows CI 会执行单元测试、打包和已打包应用的启动/存档测试；v0.11.8 已提供 Windows 安装包，Windows CI 的单元测试、启动和重启后偏好保存测试已通过；桌面交互与跨平台局域网行为仍需实机验收。
-
-Windows 通过托盘菜单和悬停提示显示额度，双击托盘图标打开小屋。更新按钮打开官方发布页，下载对应安装包并核对 SHA-256 后退出应用、运行安装程序，保留原存档。详见 [Windows 支持与验收](docs/WINDOWS.md)。
-
-### 宠物助手（实验性）
-
-在偏好设置中手动开启，连接自行安装的 Ollama / LM Studio，或填写小米、DeepSeek、OpenAI 等兼容 API 的 key。每只宠物有独立性格，支持文字聊天和受限操作，并可随时结束聊天。Ollama 模型可在应用中一键下载、试运行并自动连接；应用不内置推理引擎或语音监听。[配置与限制](docs/ASSISTANT.md)。
+版本历史见 [更新记录](CHANGELOG.md)。

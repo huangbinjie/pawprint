@@ -1,54 +1,76 @@
 <a id="pawprint"></a>
 
-# Pawprint — GPT desktop pet for Windows and Mac
+# Pawprint — Your work has company
 
-[English](README.md) · [简体中文](README.zh-CN.md) · [Website](https://huangbinjie.github.io/pawprint/) · [Download](https://github.com/huangbinjie/pawprint/releases/latest)
+**A little desktop cat. A better way back to your Codex work.**
 
-Pawprint is an independent GPT desktop pet for Windows x64 and Apple silicon Macs, powered by local Codex activity. It turns local Codex activity and GPT-model token usage into a small companion that grows alongside your work. The app runs locally; nearby visits and breeding use your LAN.
+[Download v0.13.0](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.0) · [Website](https://huangbinjie.github.io/pawprint/) · [Chinese](README.zh-CN.md)
 
-![Pawprint's cream tabby companion](site/pet.png)
+Pawprint is an independent desktop companion for Windows x64 and Apple silicon Macs. It keeps useful work shortcuts beside a cat that grows with your local Codex activity. No API key or extra model requests are needed for the pet, reminders or games.
 
-## What it does
+![A cream tabby Pawprint companion](site/pet.png)
 
-- **Floating pet:** A small cat on your desktop that reacts to local Codex work, blinks, plays, and keeps its inherited look.
-- **Codex usage:** Reads local Codex records to show token usage, model-aware estimated cost, and capped pet-coin rewards. Estimates are not your subscription bill.
-- **Menu bar quota:** Shows remaining weekly and five-hour Codex quota beside its icon when a recent local snapshot exists. This is not a live account query.
-- **Genes and skills:** Hatch an egg, browse trait odds, train skills, and breed new combinations.
-- **Nearby homes:** Invite another Pawprint user to visit over your local network; chat text and usage records stay on your computer.
+## Small paws, useful shortcuts
 
-Pawprint is an independent app and is not affiliated with OpenAI.
+| When… | Your companion helps you… |
+| --- | --- |
+| You return to work | Hover over the cat and jump to your active or pinned Codex chat. Recent chats show real titles and project names. |
+| Codex needs a decision | Spot the amber bell for a supported approval or question request, then return to that chat. Pawprint never approves or answers for you. |
+| You leave a task unfinished | Save a short next-step bookmark. Your note appears beside the cat when you return. |
+| A reply finishes while you are away | Keep an unread marker until you open or mark the chat as read. Choose a gentle sound, system notification or quiet reminders. |
+| You want a small break | Play a short game, build practice and bond, and unlock toys, keepsakes and room decorations. |
+
+A reply ending is treated as a reply ending. Running or uncertain parallel tasks suppress completion celebrations.
+
+## A companion of your own
+
+- **Inherited looks:** Coat, eyes, ears and tail come from genes. Browse trait odds, hatch eggs and breed new combinations.
+- **Quiet company:** Wandering, a toy ball, cursor glances and occasional greetings. Normal controls appear on hover; the bell stays visible while a request needs you. Click targets remain usable at every pet scale.
+- **A room that grows with it:** Ball, feather and hide-and-seek games build practice and bond. The first three successful rounds per cat each day can earn growth; play and room progress are saved locally.
+- **Effort into growth:** Local token usage can earn capped pet-coin rewards. Estimated costs are API equivalents, not your subscription bill or cash assets.
+- **Meet other companions:** Share a QR visiting card, or connect nearby homes on your LAN for visits and breeding. Both people choose to connect.
+
+![Pawprint home and inherited cat traits](site/app-home.png)
+
+## Ready on first launch
+
+New installs start in **English** with local usage, quota, session feedback, broad topic labels and quiet reminders enabled. Recent chat metadata loads immediately, without replaying old reply events. Your existing language, reminder choice and explicit opt-outs are preserved on upgrade.
+
+Adopt your first egg in the home, then hover over your cat to find its work shortcuts. Pin a focus chat if you want the return button to keep pointing at the same task.
+
+On macOS, Pawprint prepares its seven clearly labeled hooks when Codex data is found. **Review and trust the “Pawprint ·” rows in your client** to enable approval alerts. Existing hook rules are preserved and backed up. Supported structured local questions also provide reminders without hook trust. Native hook setup is currently macOS-only; chat return requires a compatible Codex desktop client.
+
+## Usage close at hand
+
+See 30-day token history, daily priced costs and per-model input, cache-read, cache-write and output details. Remaining five-hour and weekly quota comes from recent local snapshots; it is not a live account query. Mac shows quota in the menu bar, Windows in the tray menu.
+
+The price catalog comes from [models.dev](https://models.dev/), refreshes automatically and retains an offline cache. API-key models used through Codex are matched by provider and model ID. Unknown or incomplete pricing stays visible as pending. Priced usage can earn today's rewards; repeated refreshes do not duplicate rewards, and incomplete or conflicting usage records pause redemption.
 
 ## Install
 
-Download the latest Mac archive from [Releases](https://github.com/huangbinjie/pawprint/releases/latest) and verify its SHA-256 file. The beta has a complete ad-hoc bundle signature but is not Apple Developer ID signed or notarized. On first launch, macOS may say it cannot verify the developer: choose Done, then System Settings → Privacy & Security → Open Anyway for Pawprint. If macOS says **damaged**, stop and report that build. See [Mac beta signing](docs/RELEASE_SIGNING.md).
+- [Windows 10/11 x64 installer](https://github.com/huangbinjie/pawprint/releases/download/v0.13.0/Pawprint-0.13.0-win-x64-setup.exe)
+- [Apple silicon Mac archive](https://github.com/huangbinjie/pawprint/releases/download/v0.13.0/Pawprint-0.13.0-mac-arm64.zip)
+- [Release notes and SHA-256 files](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.0)
 
-Windows builds use `Pawprint-<version>-win-x64-setup.exe` with an accompanying SHA-256 file. The v0.11.8 Windows installer is published. Windows CI passed the core tests and packaged-app startup and preference-persistence checks; interactive desktop and cross-platform LAN behavior still need hands-on verification. Windows updates open the official release page for manual installation.
+Verify the accompanying checksum. Windows beta builds are unsigned; run the installer and retain your existing app data. Mac beta builds have a complete ad-hoc bundle signature but are not Developer ID signed or notarized. Move Pawprint to Applications. If macOS cannot verify the developer, choose Done, then **System Settings → Privacy & Security → Open Anyway**. If macOS says damaged, stop and report that build. See [Mac signing and installation](docs/RELEASE_SIGNING.md) and [Windows support](docs/WINDOWS.md).
+
+## Local by design
+
+Pets, bookmarks, rooms and usage data stay in your local profile. Work helpers read local Codex records; optional broad topic labels classify new messages locally. Reminder journals do not retain question text, tool arguments or transcripts. Price catalogs and update checks use their existing network sources. Nearby visits are optional and use your LAN.
+
+API chat, local model management and client voice shortcuts are retired in v0.13.0. Previous provider files are preserved and no longer loaded. See the [retirement note](docs/ASSISTANT.md).
+
+Pawprint is an independent app and is not affiliated with OpenAI. It does not read browser ChatGPT conversations or make decisions on your behalf.
 
 ## Develop
 
-Requires Node.js 22.12+ and macOS or Windows 10/11 x64 for the desktop app.
+Requires Node.js 22.12+.
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Run `npm test` for core checks and `npm run package:local` for an ad-hoc signed local Apple silicon build. The release workflow verifies its complete signature before publishing. Run `npm run package:win` on Windows to build the x64 installer. Windows CI builds the installer and smoke-tests the packaged app. See [Windows support and verification](docs/WINDOWS.md). Pushing a version tag builds and publishes a Mac archive and Windows installer through GitHub Actions; changes to `site/` deploy the website through GitHub Pages.
+`npm test` runs core checks; `npm run test:ui` runs desktop interaction checks. Use `npm run package:local` for an ad-hoc signed Apple silicon build, or `npm run package:win` on Windows for an x64 installer. Version tags build the Mac archive and Windows installer; publishing waits for both builds and their checks. Changes in `site/` deploy through GitHub Pages.
 
-Pet data stays in the local app profile. There is no account, cloud sync, cash top-up, or online trading.
-
-See the [changelog](CHANGELOG.md) for release history and [product notes](docs/PRODUCT.md) for detailed behavior.
-
-### Pet assistant (experimental)
-
-Opt in from Preferences and connect your own Ollama / LM Studio server, or a MiMo, DeepSeek, OpenAI or compatible API key. Each pet has its own personality, text chat and optional website/app actions. End conversations anytime. The Ollama catalog downloads, tests and connects models in one flow; no inference runtime or voice listening is bundled. See the [setup guide and limitations](docs/ASSISTANT.md).
-
-### 自动模型价格与用量明细
-
-内置 Codex 读取器统计最近 30 天本地用量。价格目录来自 `https://models.dev/api.json`，每天自动更新；出现待定价模型时以 15 分钟间隔尝试刷新。断网保留最近成功缓存；首次离线使用随应用附带的 OpenAI 价格兜底。价格目录请求不上传对话、用量记录或 API key。
-
-同一个 Codex 客户端通过 API key 接入其他模型时，按日志的 `model_provider` 和模型 ID 匹配目录，不将任意供应商套用 OpenAI 价格。自定义供应商别名、未收录模型或缺少服务档位价格会显示待定价；价格目录本身不能补出客户端没有记录的 token。
-
-明细包含模型、供应商、输入 token（包含缓存部分）、缓存读取/写入、输出 token、每日已定价费用及待定价记录。费用是 API 等价估算，并非订阅账单。已定价部分可领取当天奖励，新增可定价用量补算差额；重复刷新不重复发放。日志结构冲突、扫描不完整或过期报告仍暂停兑换。价格更新会使解析缓存重新计价，原始使用记录不变。
-
-子代理日志以首条 `session_meta` 为当前会话身份。明确历史边界内的祖先元数据只作为继承记录处理，不替换当前模型供应商、会话 ID 或计数基线；没有明确边界时，只接受创建时间早于子会话且 ID 匹配声明父会话的元数据。继承用量不兑换，归档镜像逐条去重；边界外或无法验证归属的身份变化仍报告结构冲突。此行为参考 CodexBar 的 leaf metadata 与 inherited prefix 处理。
+See the [changelog](CHANGELOG.md) for release history.

@@ -15,7 +15,7 @@ The installer currently has no Windows code-signing certificate configured. Chec
 - Saves are under `%APPDATA%\Pawprint`. Updating and uninstalling preserve app data.
 - Codex records default to `%USERPROFILE%\.codex`; `CODEX_HOME` or the in-app folder chooser can select another directory. If Codex runs in WSL, choose the actual accessible WSL records folder. Pawprint does not automatically discover WSL distributions.
 - The Mac-only shortcut that launches the Codex desktop client is disabled on Windows. Start your AI client normally; local record reading does not depend on that shortcut.
-- Checking updates selects only the Windows x64 installer with its checksum. The download button opens the official release page; verify the installer, quit Pawprint and run it manually. There is no automatic Windows installer execution.
+- Checking updates selects only the Windows x64 installer with its checksum. In-app updates download and verify the installer, save before exit, run the installer and restart at the existing installation path. Builds before 0.11.10 require one manual upgrade.
 - Nearby homes still use local network discovery. Windows Firewall may require allowing Pawprint on the intended private network. Cross-platform discovery and visits need verification.
 
 ## Acceptance
