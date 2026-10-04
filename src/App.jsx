@@ -328,10 +328,15 @@ export default function App() {
     state.performance?.petId === pet.id &&
     !state.performance.guestId &&
     tick - state.performance.at < (state.performance.duration || 6000);
-  const needsAttention=state.settings.attentionEnabled===true && state.work?.recent?.some(r=>r.attention&&!r.attention.seen);
+  const needsAttention=state.settings.attentionEnabled===true && !state.settings.workDnd && state.work?.recent?.some(r=>r.attention);
   const waitingChat=state.work?.recent?.filter(r=>r.attention).sort((a,b)=>Number(a.attention.seen)-Number(b.attention.seen)||b.attention.at-a.attention.at)[0];
+  const unreadReply = !state.settings.workDnd && state.work?.recent?.filter(r=>r.unread && r.kind === "completed" && !r.attention).sort((a,b)=>(b.completedAt || b.at)-(a.completedAt || a.at))[0];
+  const returnChat = (state.settings.attentionEnabled && waitingChat)
+    || state.work?.recent?.filter(r=>r.unread && r.completedAt).sort((a,b)=>b.completedAt-a.completedAt)[0]
+    || state.work?.recent?.slice().sort((a,b)=>b.at-a.at)[0];
   const activityWorking = state.activity?.status === "running" && !needsAttention;
-  const idle = (activityWorking && !manualChase) || playing || petting ? { mode: "rest", facing: 1, edge: "bottom", gaze: playing || petting ? null : state.idle?.gaze } : state.idle || { mode: "rest", facing: 1, edge: "bottom" };
+  const completionJump = playing && state.performance?.source === "activity" && !needsAttention;
+  const idle = needsAttention || (activityWorking && !manualChase) || playing || petting ? { mode: "rest", facing: 1, edge: "bottom", gaze: playing || petting ? null : state.idle?.gaze } : state.idle || { mode: "rest", facing: 1, edge: "bottom" };
   const desktopStyle = { width: 220, height: 242, transform: `scale(${state.displayScale || 1})`, transformOrigin: "top left", "--desktop-pet-scale": state.displayScale || 1 };
   async function playSkill(id, skillId) {
     const result = await api.performSkill(id, skillId);
@@ -468,13 +473,16 @@ export default function App() {
           className={`float-cat-button ${pet ? "" : "float-egg-button"}`}
           data-interactive
           aria-label={pet ? "桌面宠物" : "桌面宠物蛋"}
-          title="晃晃鼠标逗它 · 点击摸摸 · 双击小屋 · 右键菜单"
+          title="晃晃鼠标逗它 · 点击摸摸 · 双击返回会话 · 右键菜单"
           onContextMenu={(event) => {
             event.preventDefault();
             api.showMenu();
           }}
-          onDoubleClick={() => {
-            if (!wasDragged.current) api.showHome("home");
+          onDoubleClick={async () => {
+            if (wasDragged.current) return;
+            if (!returnChat) { api.showHome("work"); return; }
+            const result = await api.openWorkSession(returnChat.threadId);
+            if (!result.ok) setToast({ text: result.error, error: true });
           }}
           onClick={() => {
             if (!wasDragged.current) greetPet();
@@ -520,10 +528,10 @@ export default function App() {
             <div className={`idle-actor edge-${idle.edge || "bottom"} behavior-${idle.mode} phase-${idle.phase || "rest"} peek-${idle.peekSide || "left"}`} key={`${idle.mode}-${idle.startedAt}`} style={{ "--pet-facing": idle.facing || 1, "--look-x": (idle.gaze?.x || 0) * (idle.facing || 1), "--look-y": idle.gaze?.y || 0 }}>
             <Cat
               genome={pet.genome}
-              className={`${needsAttention?"attention-waiting ":""}${activityWorking && !manualChase && !playing && !petting ? "working" : `idle-pose-${idle.mode}`} ${idle.gaze ? "cursor-attention" : ""}`}
+              className={`${completionJump?"reply-complete ":""}${needsAttention?"attention-waiting ":""}${activityWorking && !manualChase && !playing && !petting ? "working" : `idle-pose-${idle.mode}`} ${idle.gaze ? "cursor-attention" : ""}`}
               mood={petting ? "happy" : "idle"}
-              talentId={playing && !state.performance.skillId ? pet.talent.id : idle.mode === "talent" ? idle.talentId : null}
-              skillId={playing ? state.performance.skillId : !["ball", "toyroll"].includes(idle.mode) && skillById(idle.mode) ? idle.mode : null}
+              talentId={playing && !completionJump && !needsAttention && !state.performance.skillId ? pet.talent.id : idle.mode === "talent" ? idle.talentId : null}
+              skillId={needsAttention ? null : playing ? state.performance.skillId : !["ball", "toyroll"].includes(idle.mode) && skillById(idle.mode) ? idle.mode : null}
               talentLevel={pet.talent.level}
             />
             </div>
@@ -531,6 +539,8 @@ export default function App() {
             <Egg ready={!pendingEgg || tick >= pendingEgg.readyAt} />
           )}
         </button>
+        {pet && unreadReply && !needsAttention && <button className="reply-return" data-interactive aria-label={state.settings.language === "en" ? "View unread reply" : "查看未读回复"} title={unreadReply.title || (state.settings.language === "en" ? "View unread reply" : "查看未读回复")} onClick={() => void api.openWorkSession(unreadReply.threadId)}>↗<span className="reply-unread-dot" /></button>}
+        {pet && needsAttention && waitingChat && <button className="attention-sign" data-interactive aria-label={waitingChat.attention.kind === "approval" ? "等你审批，打开会话" : "等你回答，打开会话"} onClick={() => void api.openWorkSession(waitingChat.threadId)}>{state.settings.language === "en" ? (waitingChat.attention.kind === "approval" ? "Approve" : "Your turn") : (waitingChat.attention.kind === "approval" ? "审批" : "等你")} <span aria-hidden="true">↗</span></button>}
         {pet && ["ball", "toyroll"].includes(idle.mode) && <div className={`toy-ball ${idle.mode === "toyroll" ? "toy-surprise" : ""}`} key={idle.startedAt} aria-label="宠物玩具球" role="img">
           <svg viewBox="0 0 40 40" aria-hidden="true">
             <circle cx="20" cy="20" r="17" fill="#dda366" stroke="#a77543" strokeWidth="2" />
@@ -679,8 +689,8 @@ export default function App() {
                         <Cat
                           key={state.performance?.at}
                           genome={pet.genome}
-                          talentId={playing && !state.performance.skillId ? pet.talent.id : null}
-                          skillId={playing ? state.performance.skillId : null}
+                          talentId={playing && !completionJump && !needsAttention && !state.performance.skillId ? pet.talent.id : null}
+                          skillId={needsAttention ? null : playing ? state.performance.skillId : null}
                           talentLevel={pet.talent.level}
                           mood={petting ? "happy" : "idle"}
                           label={describe(pet.genome)}
@@ -1731,7 +1741,7 @@ export default function App() {
                   <div>
                     <strong>悬浮宠物</strong>
                     <p>
-                      把正在陪伴你的猫咪放到其他窗口上方，直接拖动宠物移动；双击打开小屋，右键打开菜单。
+                      把正在陪伴你的猫咪放到其他窗口上方，直接拖动宠物移动；双击返回会话，右键打开菜单。
                     </p>
                   </div>
                   <button

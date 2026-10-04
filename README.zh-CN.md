@@ -4,7 +4,7 @@
 
 **一点桌面陪伴，也帮你回到对的 Codex 会话。**
 
-[下载 v0.13.0](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.0) · [官网](https://huangbinjie.github.io/pawprint/zh/) · [English](README.md)
+[下载 v0.13.1](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.1) · [官网](https://huangbinjie.github.io/pawprint/zh/) · [English](README.md)
 
 爪印是一款独立开发的桌面伙伴，支持 Windows x64 和 Apple 芯片 Mac。猫咪随本机 Codex 活动成长，身边留着几个实用的工作入口。宠物、提醒和小游戏无需 API key，不额外发起模型请求。
 
@@ -14,8 +14,8 @@
 
 | 当你…… | 猫咪可以帮你…… |
 | --- | --- |
-| 回来接着工作 | 鼠标移到猫咪上，返回当前或固定会话；最近会话显示真实标题和项目。 |
-| Codex 需要你作决定 | 看见黄色铃铛，点一下回到等待审批或回答的会话。不会代你审批或回答。 |
+| 回来接着工作 | 双击猫咪，优先返回待回答或审批的会话，再是最新未读回复和最近会话。 |
+| Codex 需要你作决定 | 看见举起的木牌，点一下回到等待审批或回答的会话。不会代你审批或回答。 |
 | 暂时放下一个任务 | 留一句下一步书签；回来时，猫咪旁边显示你的备注。 |
 | 切出去后错过回复 | 保留未读标记，也可选轻声或系统通知。安静提醒和勿扰都可用。 |
 | 想休息一小会儿 | 玩一轮短游戏，培养熟练度和亲密度，解锁玩具、纪念物和房间装饰。 |
@@ -25,7 +25,7 @@
 ## 有自己模样的伙伴
 
 - **遗传外貌：** 毛色、眼睛、耳朵和尾巴由基因决定；可查概率、孵化和繁育新组合。
-- **安静陪伴：** 散步、玩球、看看光标，偶尔低频打招呼。普通按钮悬停才显示；有待处理请求时铃铛保持可见，点击范围不随宠物缩小。
+- **安静陪伴：** 散步、玩球、看看光标，偶尔低频打招呼。双击猫咪返回会话；回复结束轻跳一次，待回答或审批时举起可点击木牌。状态气泡和未读箭头也可返回对应会话。
 - **慢慢布置的房间：** 玩球、逗猫棒和捉迷藏积累成长。每天每只猫前 3 次成功练习可获得成长，进度与布置保存在本机。
 - **努力变成一点成长：** 本地 token 用量可以获得有上限的宠物币。费用是 API 等价估算，不是订阅账单或现金资产。
 - **见见小伙伴：** 分享二维码访问卡，或双方选择连接局域网小屋，邀请串门与繁育。
@@ -36,7 +36,7 @@
 
 新安装默认 **English**，开启本地用量、额度、会话联动、大致主题和安静提醒。首次加载最近会话，不补播历史回复；升级保留已有语言、提醒方式和主动关闭的选项。
 
-在小屋领养第一枚蛋，再移到猫咪上使用工作入口。想让返回按钮一直指向同一个任务，可以固定一个主会话。
+在小屋领养第一枚蛋，再双击猫咪返回会话。右键菜单可以打开小屋。
 
 macOS 上发现 Codex 数据后，会自动准备 7 条带名称的 Hook。审批提醒仍需在客户端 **审核并信任“Pawprint ·”规则**；其他规则保留并备份。受支持的本地结构化提问记录也能提供提醒，无需 Hook 信任。原生 Hook 设置目前仅支持 macOS；返回会话需要兼容的 Codex 桌面客户端。
 
@@ -48,9 +48,9 @@ macOS 上发现 Codex 数据后，会自动准备 7 条带名称的 Hook。审�
 
 ## 安装
 
-- [Windows 10/11 x64 安装包](https://github.com/huangbinjie/pawprint/releases/download/v0.13.0/Pawprint-0.13.0-win-x64-setup.exe)
-- [Apple 芯片 Mac 压缩包](https://github.com/huangbinjie/pawprint/releases/download/v0.13.0/Pawprint-0.13.0-mac-arm64.zip)
-- [更新说明与 SHA-256 文件](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.0)
+- [Windows 10/11 x64 安装包](https://github.com/huangbinjie/pawprint/releases/download/v0.13.1/Pawprint-0.13.1-win-x64-setup.exe)
+- [Apple 芯片 Mac 压缩包](https://github.com/huangbinjie/pawprint/releases/download/v0.13.1/Pawprint-0.13.1-mac-arm64.zip)
+- [更新说明与 SHA-256 文件](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.1)
 
 请核对附带的校验文件。Windows 内测包未签名，运行安装程序并保留已有数据。Mac 内测包有完整的临时封装签名，但未使用 Developer ID 和苹果公证。把 Pawprint 放入 Applications；若提示无法验证开发者，点“完成”，到「系统设置 → 隐私与安全性」选择“仍要打开”。若提示已损坏，请停止并反馈该版本。详见 [Mac 签名与安装](docs/RELEASE_SIGNING.md)及 [Windows 支持](docs/WINDOWS.md)。
 

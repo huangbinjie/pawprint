@@ -73,7 +73,7 @@ const petControlsHover={pet:false,dock:false};
 let workTitlesTimer, workTitlesPending;
 let workMini, workPanelRequested=false, workNoteWindow, workNoteValue=null, workNoteTimer;
 let home, floating, store, refreshPromise, interval, tray, moveTimer, updates;
-const activityBubble = new ActivityBubble();
+const activityBubble = new ActivityBubble({ onOpen: id => void openActivitySession(id).catch(() => createHome("work")) });
 let dragOrigin = null;
 let lan,
   performance = null;
@@ -310,22 +310,13 @@ function hoverPetControls(surface,hovered){
 }
 function petAnchor(){
   if(!floating||floating.isDestroyed()||!floating.isVisible())return null;
-  const p=floating.getBounds();
-  if(!petControls||petControls.isDestroyed()||!petControls.isVisible())return p;
-  const d=petControls.getBounds(),x=Math.min(p.x,d.x),y=Math.min(p.y,d.y);
-  return {x,y,width:Math.max(p.x+p.width,d.x+d.width)-x,height:Math.max(p.y+p.height,d.y+d.height)-y};
+  return floating.getBounds();
 }
 function syncPetControls(){
-  if(quitting||screenLocked||suspended||!floating||floating.isDestroyed()||!floating.isVisible()||!housePets(store.state).length){hidePetControls();return;}
-  const p=floating.getBounds(),area=screen.getDisplayMatching(p).workArea;
-  const waiting=store.state.settings.attentionEnabled&&attentionTarget(store.state),target=workTarget(store.state,activity?.snapshot());
-  const count=1+(target?1:0)+(waiting?1:0),bounds=petControlsBounds(p,area,count);
-  if(!petControls||petControls.isDestroyed()){
-    const w=new BrowserWindow({...bounds,title:'Pawprint Pet Controls',frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,movable:false,focusable:false,alwaysOnTop:true,skipTaskbar:true,hasShadow:false,acceptFirstMouse:true,show:false,
-      webPreferences:{preload:path.join(here,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
-    petControls=w;petControlsInteractive=false;petControlsPressed=false;w.setIgnoreMouseEvents(true,{forward:true});w.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});w.on('page-title-updated',e=>e.preventDefault());w.once('ready-to-show',()=>{if(w===petControls&&!quitting&&floating?.isVisible())w.showInactive();});w.on('closed',()=>{if(w===petControls)petControls=null;});load(w,'petcontrols');
-  }else{petControls.setBounds(bounds,false);if(!petControls.isVisible())petControls.showInactive();}
+  // Work entry points now live beside the cat, without a hover toolbar.
+  hidePetControls();
 }
+
 function showClientGuide(kind){
   setupGuideValue={kind,navigation:null};
   const bounds=panelBounds({width:390,height:590});
@@ -568,20 +559,19 @@ function createTray(reason = "startup") {
 }
 function syncActivityBubble() {
   if (screenLocked || suspended || workNoteValue || workMini?.isVisible() || store.state.settings.workDnd) { activityBubble.hide(); return; }
-  if(attentionBubbleEvent && Date.now()-attentionBubbleEvent.at<8000){
-    const pet=petAnchor();
-    const row=workState(store.state).recent.find(r=>r.threadId===attentionBubbleEvent.threadId);
-    activityBubble.update({pet,event:attentionBubbleEvent,subtitle:row?.title || null});return;
+  if (attentionBubbleEvent && Date.now() - attentionBubbleEvent.at < 8000) {
+    const row = workState(store.state).recent.find(r => r.threadId === attentionBubbleEvent.threadId);
+    activityBubble.update({ pet: petAnchor(), event: attentionBubbleEvent, subtitle: row?.title || null });
+    return;
   }
-  const state = activity?.snapshot();
-  const event = state?.event;
+  const state = activity?.snapshot(), event = state?.event;
   if (!event || Date.now() - event.at >= 8000) { activityBubble.hide(); return; }
-  const pet = petAnchor();
-  const remaining = state?.activeCount > (event?.kind === "completed" ? 0 : 1)
+  const remaining = state.activeCount > (event.kind === "completed" ? 0 : 1)
     ? tr(`还有 ${state.activeCount} 个会话在进行`) : null;
-  const subtitle=remaining || (state?.uncertainCount ? tr("还有会话的状态暂不确定") : null);
-  activityBubble.update({ pet, event: event ? { ...event, text: tr(event.text) } : null, subtitle });
+  const subtitle = remaining || (state.uncertainCount ? tr("还有会话的状态暂不确定") : null);
+  activityBubble.update({ pet: petAnchor(), event: { ...event, text: tr(event.text) }, subtitle });
 }
+
 function rememberPosition() {
   clearTimeout(moveTimer);
   if (!floating || floating.isDestroyed() || quitting) return;
@@ -882,7 +872,7 @@ function activityChanged(value) {
       const pets = housePets(store.state);
       const pet = pets.find(p => p.id === store.state.activePetId) || pets[0];
       if (pet) performance = { petId: pet.id, guestId: null, talentId: pet.talent.id,
-        level: pet.talent.level, at: Date.now(), source: "activity" };
+        level: pet.talent.level, duration: 1100, at: Date.now(), source: "activity" };
     }
   }
   if (!value.enabled && performance?.source === "activity") performance = null;

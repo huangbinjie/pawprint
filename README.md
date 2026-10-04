@@ -4,7 +4,7 @@
 
 **A little desktop cat. A better way back to your Codex work.**
 
-[Download v0.13.0](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.0) · [Website](https://huangbinjie.github.io/pawprint/) · [Chinese](README.zh-CN.md)
+[Download v0.13.1](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.1) · [Website](https://huangbinjie.github.io/pawprint/) · [Chinese](README.zh-CN.md)
 
 Pawprint is an independent desktop companion for Windows x64 and Apple silicon Macs. It keeps useful work shortcuts beside a cat that grows with your local Codex activity. No API key or extra model requests are needed for the pet, reminders or games.
 
@@ -14,8 +14,8 @@ Pawprint is an independent desktop companion for Windows x64 and Apple silicon M
 
 | When… | Your companion helps you… |
 | --- | --- |
-| You return to work | Hover over the cat and jump to your active or pinned Codex chat. Recent chats show real titles and project names. |
-| Codex needs a decision | Spot the amber bell for a supported approval or question request, then return to that chat. Pawprint never approves or answers for you. |
+| You return to work | Double-click your cat to open a pending question or approval, then the latest unread reply, then your most recent chat. |
+| Codex needs a decision | Click the wooden sign for a supported approval or question request to return to that chat. Pawprint never approves or answers for you. |
 | You leave a task unfinished | Save a short next-step bookmark. Your note appears beside the cat when you return. |
 | A reply finishes while you are away | Keep an unread marker until you open or mark the chat as read. Choose a gentle sound, system notification or quiet reminders. |
 | You want a small break | Play a short game, build practice and bond, and unlock toys, keepsakes and room decorations. |
@@ -25,7 +25,7 @@ A reply ending is treated as a reply ending. Running or uncertain parallel tasks
 ## A companion of your own
 
 - **Inherited looks:** Coat, eyes, ears and tail come from genes. Browse trait odds, hatch eggs and breed new combinations.
-- **Quiet company:** Wandering, a toy ball, cursor glances and occasional greetings. Normal controls appear on hover; the bell stays visible while a request needs you. Click targets remain usable at every pet scale.
+- **Quiet company:** Wandering, a toy ball, cursor glances and occasional greetings. Double-click the cat to return to work. A gentle hop marks an ended reply; a clickable wooden sign stays while a request needs you. Status bubbles and unread arrows also return to the associated chat.
 - **A room that grows with it:** Ball, feather and hide-and-seek games build practice and bond. The first three successful rounds per cat each day can earn growth; play and room progress are saved locally.
 - **Effort into growth:** Local token usage can earn capped pet-coin rewards. Estimated costs are API equivalents, not your subscription bill or cash assets.
 - **Meet other companions:** Share a QR visiting card, or connect nearby homes on your LAN for visits and breeding. Both people choose to connect.
@@ -36,7 +36,7 @@ A reply ending is treated as a reply ending. Running or uncertain parallel tasks
 
 New installs start in **English** with local usage, quota, session feedback, broad topic labels and quiet reminders enabled. Recent chat metadata loads immediately, without replaying old reply events. Your existing language, reminder choice and explicit opt-outs are preserved on upgrade.
 
-Adopt your first egg in the home, then hover over your cat to find its work shortcuts. Pin a focus chat if you want the return button to keep pointing at the same task.
+Adopt your first egg in the home, then double-click your cat to return to work. The right-click menu opens your home.
 
 On macOS, Pawprint prepares its seven clearly labeled hooks when Codex data is found. **Review and trust the “Pawprint ·” rows in your client** to enable approval alerts. Existing hook rules are preserved and backed up. Supported structured local questions also provide reminders without hook trust. Native hook setup is currently macOS-only; chat return requires a compatible Codex desktop client.
 
@@ -48,9 +48,9 @@ The price catalog comes from [models.dev](https://models.dev/), refreshes automa
 
 ## Install
 
-- [Windows 10/11 x64 installer](https://github.com/huangbinjie/pawprint/releases/download/v0.13.0/Pawprint-0.13.0-win-x64-setup.exe)
-- [Apple silicon Mac archive](https://github.com/huangbinjie/pawprint/releases/download/v0.13.0/Pawprint-0.13.0-mac-arm64.zip)
-- [Release notes and SHA-256 files](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.0)
+- [Windows 10/11 x64 installer](https://github.com/huangbinjie/pawprint/releases/download/v0.13.1/Pawprint-0.13.1-win-x64-setup.exe)
+- [Apple silicon Mac archive](https://github.com/huangbinjie/pawprint/releases/download/v0.13.1/Pawprint-0.13.1-mac-arm64.zip)
+- [Release notes and SHA-256 files](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.1)
 
 Verify the accompanying checksum. Windows beta builds are unsigned; run the installer and retain your existing app data. Mac beta builds have a complete ad-hoc bundle signature but are not Developer ID signed or notarized. Move Pawprint to Applications. If macOS cannot verify the developer, choose Done, then **System Settings → Privacy & Security → Open Anyway**. If macOS says damaged, stop and report that build. See [Mac signing and installation](docs/RELEASE_SIGNING.md) and [Windows support](docs/WINDOWS.md).
 

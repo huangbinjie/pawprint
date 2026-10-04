@@ -112,6 +112,15 @@ jobs:
           - Improved QR visiting-card spacing and image import buttons; the native file input stays hidden.
           - Clearer usage typography and complete English text for populated reports, pricing states and daily tables.
           NOTES
+          elif [ "$GITHUB_REF_NAME" = v0.13.1 ]; then
+            cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+
+          ## Pawprint 0.13.1 — One double-click back to work
+          - Double-click your cat to open the conversation that needs an answer or approval, then the latest unread reply, then the most recent chat. Home remains in the right-click menu.
+          - Your cat hops once when a reply ends and holds a readable wooden sign while waiting for your answer or approval. Click the sign to return to that chat.
+          - Status bubbles sit closer to the cat and can be clicked. Missed replies keep a small return arrow beside the cat until opened.
+          - Removed the floating hover toolbar. Existing pets, genes, balances and preferences are preserved.
+          NOTES
           elif [ "$GITHUB_REF_NAME" = v0.13.0 ]; then
             cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
 

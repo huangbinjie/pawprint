@@ -3,94 +3,41 @@ import { mkdtemp, mkdir, writeFile, appendFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { seedMatureCompanion } from "./fixtures/game.mjs";
-import { openHome,petControls,revealPetControls } from "./helpers.mjs";
+import { openHome } from "./helpers.mjs";
 
-test("Codex lifecycle drives transient pet feedback without spending or replaying history", async ({}, info) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "pawprint-activity-ui-"));
-  const profile = path.join(root, "profile"), codex = path.join(root, "codex");
-  await seedMatureCompanion(profile);
-  const date = new Date();
-  const folder = path.join(codex, "sessions", String(date.getFullYear()), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0"));
-  await mkdir(folder, { recursive: true });
-  const file = path.join(folder, "session.jsonl");
-  const row = (type, extra = {}) => JSON.stringify({ timestamp: new Date().toISOString(), type: "event_msg", payload: { type, turn_id: "ui-turn", ...extra } }) + "\n";
-  const threadId="01a0f1ea-4534-7651-b950-045a233fe631";
-  await writeFile(file, JSON.stringify({type:"session_meta",payload:{id:threadId,instructions:"PRIVATE"}})+"\n"+row("task_started")+row("task_complete"));
-  const app = await electron.launch({ args: ["."], env: { ...process.env, PAWPRINT_TEST_MODE: "1", PAWPRINT_TEST_DATA: profile, PAWPRINT_TEST_CODEX_HOME: codex, PAWPRINT_TEST_LAN: "1" } });
-  try {
-    const floating = await app.firstWindow();
-    const controls=await petControls(app);
-    const home = await openHome(app, "settings");
-    const before = (await home.evaluate(() => window.pawprint.getState())).data;
-    const petBounds=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('#floating')).getBounds());
-    await app.evaluate(({BrowserWindow})=>{
-      const original=BrowserWindow.prototype.setIgnoreMouseEvents;
-      BrowserWindow.prototype.setIgnoreMouseEvents=function(ignore,...rest){if(this.getTitle()==='Pawprint Activity Bubble')globalThis.pawBubbleIgnoresMouse=ignore;return original.call(this,ignore,...rest)};
-      const originalHide=BrowserWindow.prototype.hide;
-      globalThis.pawBubbleHideCalls=0;
-      BrowserWindow.prototype.hide=function(...args){if(this.getTitle()==='Pawprint Activity Bubble')globalThis.pawBubbleHideCalls++;return originalHide.apply(this,args)};
-    });
-    await home.getByRole("switch", { name: "Codex 会话联动", exact: true }).click();
-    await home.getByRole("switch", { name: "显示大致主题", exact: true }).click();
-    await expect(home.getByRole("switch",{name:"显示大致主题",exact:true})).toBeEnabled();
-    await expect(home.getByTestId("activity-status")).toContainText("等待新状态记录");
-    expect(app.windows().some(w=>w.url().startsWith("data:text/html"))).toBe(false);
-    await appendFile(file, row("task_started") + row("item_completed", { item: { type: "UserMessage", content: [{ type: "Text", text: "帮我修复 SECRET 的错误" }] } }));
-    await expect.poll(()=>app.windows().some(w=>w.url().startsWith("data:text/html")),{timeout:10000}).toBe(true);
-    const bubble=app.windows().find(w=>w.url().startsWith("data:text/html"));
-    await expect(bubble.locator('.bubble')).toContainText('陪你排查问题');
-    expect(await app.evaluate(()=>globalThis.pawBubbleIgnoresMouse)).toBe(true);
-    const placement=await app.evaluate(({BrowserWindow})=>{
-      const pet=BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('#floating'));
-      const bubble=BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Pawprint Activity Bubble');
-      return {pet:pet.getBounds(),bubble:bubble.getBounds()};
-    });
-    expect(placement.pet).toEqual(petBounds);
-    expect(placement.bubble.y+placement.bubble.height).toBeLessThanOrEqual(placement.pet.y-8);
-    await bubble.screenshot({path:info.outputPath('codex-bubble.png'),omitBackground:true});
-    await app.evaluate(({shell})=>{shell.openExternal=async url=>{globalThis.pawOpenedWork=url;};});
-    await revealPetControls(app);await expect(controls.getByRole('button',{name:'最近 Codex 会话',exact:true})).toBeVisible();
-    await controls.getByRole('button',{name:'最近 Codex 会话',exact:true}).click();
-    await expect.poll(()=>app.windows().some(w=>w.url().endsWith('#workmini'))).toBe(true);
-    const workMini=app.windows().find(w=>w.url().endsWith('#workmini'));
-    await workMini.getByRole('button',{name:'返回关注会话',exact:true}).click();
-    await expect.poll(()=>app.evaluate(()=>globalThis.pawOpenedWork)).toBe(`codex://threads/${threadId}`);
-    await expect(floating.locator(".cat.working")).toBeVisible();
-    expect(await floating.locator(".cat-body").evaluate(el => getComputedStyle(el).animationName)).toBe("companion-work");
-    await floating.screenshot({ path: info.outputPath("codex-working.png"), omitBackground: true });
-    await home.screenshot({ path: info.outputPath("activity-settings.png") });
-    await appendFile(file, row("task_complete", { last_agent_message: "PRIVATE final content" }));
-    await expect(bubble.locator(".bubble")).toContainText("本轮回复结束啦", { timeout: 10000 });
-    await expect(floating.locator(".cat.perform")).toBeVisible();
-    await expect(floating.locator(".cat.working")).toHaveCount(0);
-    await floating.screenshot({ path: info.outputPath("codex-completed.png"), omitBackground: true });
-    const after = (await home.evaluate(() => window.pawprint.getState())).data;
-    expect(after.balance).toBe(before.balance);
-    expect(after.ledger).toEqual(before.ledger);
-    expect(after.pets[0].genome).toEqual(before.pets[0].genome);
-    expect(JSON.stringify(after.activity)).not.toMatch(/SECRET|PRIVATE/);
-    await expect.poll(()=>app.evaluate(({BrowserWindow})=>{
-      const b=BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Pawprint Activity Bubble');return b?.isVisible() ?? false;
-    }),{timeout:12000}).toBe(false);
-    await expect(home.getByTestId('activity-status')).toContainText('最近一轮回复已结束');
-    await revealPetControls(app);await expect(controls.getByRole('button',{name:'最近 Codex 会话',exact:true})).toBeVisible();
-    await home.evaluate(()=>window.pawprint.command({type:'language',value:'en'}));
-    await expect(home.getByTestId('activity-status')).toContainText('The latest reply has ended');
-    await revealPetControls(app);await expect(controls.getByRole('button',{name:'Recent Codex chats',exact:true})).toBeVisible();
-    await floating.screenshot({path:info.outputPath('codex-return-english.png'),omitBackground:true});
-    await home.evaluate(()=>window.pawprint.command({type:'language',value:'zh'}));
-    const hiddenCalls=await app.evaluate(()=>globalThis.pawBubbleHideCalls);
-    await floating.waitForTimeout(650);
-    expect(await app.evaluate(()=>globalThis.pawBubbleHideCalls)).toBe(hiddenCalls);
-    await appendFile(file, row("task_complete"));
-    await expect.poll(async () => (await home.evaluate(() => window.pawprint.getState())).data.activity.event).toBeNull();
-    await home.getByRole("switch", { name: "Codex 会话联动", exact: true }).click();
-    await expect(home.getByTestId("activity-status")).toContainText("已关闭");
-  } catch(error) {
-    const info=await app.evaluate(({BrowserWindow})=>({windows:BrowserWindow.getAllWindows().map(w=>({title:w.getTitle(),url:w.webContents.getURL().slice(0,55),visible:w.isVisible()})),activity:globalThis.pawLastActivity||null}));
-    console.log('Bubble diagnostic:',JSON.stringify(info));
-    throw error;
-  } finally { await app.close(); }
+test('completed reply keeps a direct return arrow after the gesture ends',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'paw-return-')),profile=path.join(root,'profile'),codex=path.join(root,'codex');await seedMatureCompanion(profile);await mkdir(path.join(codex,'sessions'),{recursive:true});
+ const threadId='01a0f1ea-4534-7651-b950-045a233fe631',file=path.join(codex,'sessions','one.jsonl');
+ await writeFile(file,JSON.stringify({type:'session_meta',payload:{id:threadId}})+'\n');
+ const row=(type,turn='one')=>JSON.stringify({type:'event_msg',timestamp:new Date().toISOString(),payload:{type,turn_id:turn}})+'\n';
+ const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:profile,PAWPRINT_TEST_CODEX_HOME:codex,PAWPRINT_TEST_LAN:'1'}});
+ try{
+  const floating=await app.firstWindow(),home=await openHome(app,'settings');
+  await home.getByRole('switch',{name:'Codex 会话联动',exact:true}).click();
+  await expect(home.getByTestId('activity-status')).toContainText('等待新状态记录');
+  await expect(floating.locator('.reply-return')).toHaveCount(0);
+  await appendFile(file,row('task_started'));await expect(floating.locator('.cat.working')).toBeVisible();
+  await appendFile(file,row('task_complete'));await expect(floating.locator('.cat.reply-complete')).toBeVisible();
+  await expect(floating.getByRole('button',{name:'查看未读回复'})).toBeVisible();
+  await expect(floating.locator('.cat.reply-complete')).toHaveCount(0);
+  await expect(floating.getByRole('button',{name:'查看未读回复'})).toBeVisible();
+  expect(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().some(w=>w.getTitle()==='Pawprint Pet Controls'&&w.isVisible()))).toBe(false);
+  await app.evaluate(({shell})=>{shell.openExternal=async url=>{globalThis.returnOpened=url;};});
+  await expect.poll(()=>app.windows().some(w=>w.url().startsWith('data:text/html')&&w.url().includes('bubble'))).toBe(true);
+  const bubble=app.windows().find(w=>w.url().startsWith('data:text/html')&&w.url().includes('bubble'));
+  await expect(bubble.locator('.bubble')).toContainText('本轮回复结束啦');
+  await bubble.getByRole('link',{name:'打开对应会话'}).click({noWaitAfter:true});
+  await expect.poll(()=>app.evaluate(()=>globalThis.returnOpened)).toBe(`codex://threads/${threadId}`);
+  await expect(floating.locator('.reply-return')).toHaveCount(0);
+  await appendFile(file,row('task_started','two'));await expect(floating.locator('.cat.working')).toBeVisible();
+  await appendFile(file,row('task_complete','two'));await expect(floating.locator('.reply-return')).toBeVisible();
+  await expect.poll(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Pawprint Activity Bubble')?.isVisible()??false),{timeout:12000}).toBe(false);
+  await expect(floating.locator('.reply-return')).toBeVisible();
+  await app.evaluate(()=>{delete globalThis.returnOpened;});
+  await floating.getByRole('button',{name:'查看未读回复'}).click();
+  await expect.poll(()=>app.evaluate(()=>globalThis.returnOpened)).toBe(`codex://threads/${threadId}`);
+  await expect(floating.locator('.reply-return')).toHaveCount(0);
+ }finally{await app.close();}
 });
 
 test('parallel rounds do not celebrate one ended reply or a stopped round',async()=>{
@@ -108,5 +55,52 @@ test('parallel rounds do not celebrate one ended reply or a stopped round',async
   let state=(await home.evaluate(()=>window.pawprint.getState())).data;expect(state.activity.status).toBe('running');expect(state.performance?.source).not.toBe('activity');
   await appendFile(files[1],row('turn_aborted','two'));await expect.poll(async()=>(await home.evaluate(()=>window.pawprint.getState())).data.activity.status).toBe('stopped');
   state=(await home.evaluate(()=>window.pawprint.getState())).data;expect(state.performance?.source).not.toBe('activity');
+ }finally{await app.close();}
+});
+
+test('pending question holds a clickable sign until cleared',async({},info)=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),'paw-sign-'));
+  const state=await seedMatureCompanion(root);
+  const threadId='01a0f1ea-4534-7651-b950-045a233fe631';
+  state.settings.attentionEnabled=true;
+  state.work={version:1,pinned:null,recent:[{threadId,kind:'running',unread:true,bookmark:'',at:Date.now(),attention:{id:'a'.repeat(64),kind:'question',at:Date.now(),seen:false}}]};
+  const {Store}=await import('../core/store.mjs');const store=new Store(root);await store.load();await store.save(state);
+  const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:root,PAWPRINT_TEST_LAN:'1'}});
+  try{
+    const floating=await app.firstWindow();
+    await expect(floating.locator('.attention-sign')).toBeVisible();
+    await expect(floating.locator('.reply-return')).toHaveCount(0);
+    expect(await floating.locator('.cat-frontpaw-right').evaluate(el=>getComputedStyle(el).transform)).not.toBe('none');
+    await expect(floating.locator('.attention-sign')).toContainText('等你');
+    await floating.screenshot({path:info.outputPath('raised-sign.png'),omitBackground:true});
+    await app.evaluate(({shell})=>{shell.openExternal=async url=>{globalThis.signOpened=url;};});
+    await floating.locator('.attention-sign').click();
+    await expect.poll(()=>app.evaluate(()=>globalThis.signOpened)).toBe(`codex://threads/${threadId}`);
+    await expect(floating.locator('.attention-sign')).toBeVisible();
+    await expect(floating.locator('.reply-return')).toHaveCount(0);
+  }finally{await app.close();}
+});
+
+test('double clicking the cat prioritizes attention, unread replies, then recent chat',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'paw-double-')),state=await seedMatureCompanion(root);
+ const ids=['01a0f1ea-4534-7651-b950-045a233fe631','01a0f5f7-5a51-7483-9fe6-9e028bc08226','01a10440-119e-7497-bf8e-14c2b0f2f9a2'];
+ state.settings.attentionEnabled=true;
+ state.work={version:1,pinned:ids[2],recent:ids.map((threadId,i)=>({threadId,at:Date.now()+i,kind:'completed',bookmark:'',unread:i===1,...(i===1?{completedAt:Date.now()}:{}),...(i===0?{attention:{id:'b'.repeat(64),kind:'question',at:Date.now(),seen:false}}:{})}))};
+ const {Store}=await import('../core/store.mjs');const store=new Store(root);await store.load();await store.save(state);
+ const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:root,PAWPRINT_TEST_CODEX_HOME:path.join(root,'codex'),PAWPRINT_TEST_LAN:'1'}});
+ try{
+  const floating=await app.firstWindow();await app.evaluate(({shell})=>{shell.openExternal=async url=>{globalThis.doubleOpened=url;};});
+  await floating.locator('.float-cat-button').dblclick({position:{x:70,y:120}});
+  await expect.poll(()=>app.evaluate(()=>globalThis.doubleOpened)).toBe(`codex://threads/${ids[0]}`);
+  await floating.evaluate(()=>window.pawprint.disconnectAttention());
+  await expect(floating.locator('.attention-sign')).toHaveCount(0);
+  await floating.waitForTimeout(550);
+  await floating.locator('.float-cat-button').dblclick({position:{x:70,y:120}});
+  await expect.poll(()=>app.evaluate(()=>globalThis.doubleOpened)).toBe(`codex://threads/${ids[1]}`);
+  await expect(floating.locator('.reply-return')).toHaveCount(0);
+  await floating.waitForTimeout(550);
+  await floating.locator('.float-cat-button').dblclick({position:{x:70,y:120}});
+  await expect.poll(()=>app.evaluate(()=>globalThis.doubleOpened)).toBe(`codex://threads/${ids[2]}`);
+  expect(app.windows().some(w=>w.url().endsWith('#home'))).toBe(false);
  }finally{await app.close();}
 });

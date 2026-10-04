@@ -16,7 +16,7 @@ export async function openHome(app, section = "home") {
   }
   const floating = await app.firstWindow();
   await expect(floating.locator(".float-cat-button")).toBeVisible();
-  await floating.locator(".float-cat-button").dblclick();
+  await floating.evaluate(()=>window.pawprint.showHome("home"));
   await expect.poll(()=>app.windows().some(w=>w.url().endsWith("#home"))).toBe(true);
   const home=app.windows().find(w=>w.url().endsWith("#home"));
   await expect(
