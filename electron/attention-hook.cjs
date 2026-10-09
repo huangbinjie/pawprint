@@ -11,7 +11,11 @@ function decode(value){if(typeof value==='string'){try{return JSON.parse(value);
 function toolResponse(value){let v=decode(value);if(v?.content?.length===1&&v.content[0].type==='text')v=decode(v.content[0].text);return v;}
 function requestKey(input,kind){
   if(kind==='question'&&typeof input.tool_use_id==='string')return hash(`question:${input.session_id}:${input.tool_use_id}`);
-  return hash(`${kind}:${input.session_id}:${input.turn_id||''}:${input.tool_name||''}:${JSON.stringify(ordered(input.tool_input||{}))}`);
+  // Codex's Bash PermissionRequest adds a description (the escalation reason).
+  // PostToolUse only carries the command. Match the operation, not that copy.
+  const toolInput=kind==='approval'&&input.tool_name==='Bash'&&typeof input.tool_input?.command==='string'
+    ? {command:input.tool_input.command} : input.tool_input||{};
+  return hash(`${kind}:${input.session_id}:${input.turn_id||''}:${input.tool_name||''}:${JSON.stringify(ordered(toolInput))}`);
 }
 function normalizeHook(input,now=Date.now()){
   if(!input||!UUID.test(input.session_id||''))return null;

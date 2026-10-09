@@ -34,7 +34,13 @@ export class AttentionBridge{
     try{
       let rules={};try{rules=JSON.parse(await readFile(path.join(this.directory,'hooks.json'),'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
       const installed=PAWPRINT_HOOKS.every(r=>rules.hooks?.[r.event]?.some(g=>g.hooks?.some(h=>h.command?.includes(MARKER)&&h.command.includes(quote(this.relay))&&h.command.includes(quote(this.execPath))&&h.statusMessage===r.label)));
-      if(installed){try{await stat(this.relay);this.publish({status:'installed'});return;}catch{}}
+      if(installed){try{
+        const source=await readFile(this.relayPath),existing=await readFile(this.relay);
+        if(!source.equals(existing)){
+          const temporary=this.relay+'.tmp';await writeFile(temporary,source,{mode:0o600,flush:true});await rename(temporary,this.relay);
+        }
+        this.publish({status:'installed'});return;
+      }catch(e){if(e.code!=='ENOENT')throw e;}}
       await this.install();
     }catch{this.publish({status:'error'});}
   }

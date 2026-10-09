@@ -112,6 +112,13 @@ jobs:
           - Improved QR visiting-card spacing and image import buttons; the native file input stays hidden.
           - Clearer usage typography and complete English text for populated reports, pricing states and daily tables.
           NOTES
+          elif [ "$GITHUB_REF_NAME" = v0.13.2 ]; then
+            cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+
+          ## Pawprint 0.13.2
+          - Fix stale Bash approval signs after a tool completes. Approval and completion events now match even when only the approval event includes a description.
+          - Refresh Pawprint's installed hook relay after upgrades while preserving existing client hook rules.
+          NOTES
           elif [ "$GITHUB_REF_NAME" = v0.13.1 ]; then
             cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
 

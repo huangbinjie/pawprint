@@ -2,6 +2,11 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.13.2 — 2026-10-09
+
+- Fix stale Bash approval signs after a tool completes: match the command without the approval-only description.
+- Refresh the installed hook relay after app upgrades while preserving existing client hook rules.
+
 ## 0.13.0 — 2026-10-02
 
 - Work chats beside the cat: return to the active or pinned Codex chat, switch between recent chats with real titles and project names, and keep a local next-step bookmark.

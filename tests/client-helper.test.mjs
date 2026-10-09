@@ -26,6 +26,20 @@ test('structured question records ignore async acknowledgements and clear only e
  t.attentionRecord(row('event_msg',{type:'user_message',message:'A normal PRIVATE message'}),'file',now);assert.deepEqual(t.takeAttentionEvents(),[]);
  t.attentionRecord(row('event_msg',{type:'user_message',message:`<send_user_message_question_reply>${JSON.stringify([{questionItemId:JSON.stringify(['request_user_input_async','call-one',0]),answer:'PRIVATE_ANSWER'}])}</send_user_message_question_reply>`}),'file',now);const resolved=t.takeAttentionEvents();assert.equal(resolved[0].requestId,wait[0].requestId);assert.equal(resolved[0].action,'resolved');assert.ok(!JSON.stringify(resolved).includes('PRIVATE'));
 });
+test('Bash approval clears when completion omits the escalation description',()=>{
+ const wait=relay.normalizeHook(permission,now);
+ const done=relay.normalizeHook({...permission,hook_event_name:'PostToolUse',tool_input:{command:permission.tool_input.command}},now+1);
+ assert.equal(done.requestId,wait.requestId);
+ let s=initialState(now);
+ s=transition(s,{type:'_work-attention',events:[wait]},{now});
+ assert.equal(s.work.recent[0].attention.kind,'approval');
+ const otherCommand=relay.normalizeHook({...permission,tool_input:{command:'different'}},now+1);
+ const otherThread=relay.normalizeHook({...permission,session_id:other},now+1);
+ s=transition(s,{type:'_work-attention',events:[otherCommand,otherThread,done]},{now});
+ assert.equal(s.work.recent.find(r=>r.threadId===id).attention.id,otherCommand.requestId);
+ assert.equal(s.work.recent.find(r=>r.threadId===other).attention.id,otherThread.requestId);
+ validateState(s);
+});
 test('connecting recovers an explicit unanswered question without replaying work history',async t=>{
  const dir=await mkdtemp(path.join(os.tmpdir(),'paw-question-recover-'));t.after(()=>rm(dir,{recursive:true,force:true}));await mkdir(path.join(dir,'sessions'));const file=path.join(dir,'sessions','root.jsonl'),batches=[];
  const row=(type,payload,at)=>JSON.stringify({type,payload,timestamp:new Date(at).toISOString()})+'\n';
@@ -56,5 +70,6 @@ test('automatic hooks preserve unrelated rules, avoid repeat installs and leave 
  const dir=await mkdtemp(path.join(os.tmpdir(),'paw-auto-hook-'));t.after(()=>rm(dir,{recursive:true,force:true}));const client=path.join(dir,'client');
  const bridge=new AttentionBridge({dataDirectory:dir,directory:client,execPath:process.execPath,relayPath:path.resolve('electron/attention-hook.cjs'),platform:'darwin'});t.after(()=>bridge.close());await bridge.configure(true);await bridge.prepareDefaults();assert.equal(bridge.snapshot().status,'question-only');
  await mkdir(client);const old={hooks:{SessionStart:[{hooks:[{type:'command',command:'echo KEEP'}]}]}};await writeFile(path.join(client,'hooks.json'),JSON.stringify(old));await bridge.prepareDefaults();const first=await readFile(path.join(client,'hooks.json'),'utf8');assert.equal(JSON.parse(first).hooks.SessionStart[0].hooks[0].command,'echo KEEP');assert.equal(bridge.snapshot().status,'installed');await bridge.prepareDefaults();assert.equal(await readFile(path.join(client,'hooks.json'),'utf8'),first);
+ await writeFile(bridge.relay,'// previous version');await bridge.prepareDefaults();assert.equal(await readFile(bridge.relay,'utf8'),await readFile(bridge.relayPath,'utf8'));assert.equal(await readFile(path.join(client,'hooks.json'),'utf8'),first);
  await writeFile(path.join(client,'hooks.json'),'BROKEN');await bridge.prepareDefaults();assert.equal(bridge.snapshot().status,'error');assert.equal(await readFile(path.join(client,'hooks.json'),'utf8'),'BROKEN');
 });

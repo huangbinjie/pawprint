@@ -4,7 +4,7 @@
 
 **A little desktop cat. A better way back to your Codex work.**
 
-[Download v0.13.1](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.1) · [Website](https://huangbinjie.github.io/pawprint/) · [Chinese](README.zh-CN.md)
+[Download v0.13.2](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.2) · [Website](https://huangbinjie.github.io/pawprint/) · [Chinese](README.zh-CN.md)
 
 Pawprint is an independent desktop companion for Windows x64 and Apple silicon Macs. It keeps useful work shortcuts beside a cat that grows with your local Codex activity. No API key or extra model requests are needed for the pet, reminders or games.
 
@@ -48,9 +48,9 @@ The price catalog comes from [models.dev](https://models.dev/), refreshes automa
 
 ## Install
 
-- [Windows 10/11 x64 installer](https://github.com/huangbinjie/pawprint/releases/download/v0.13.1/Pawprint-0.13.1-win-x64-setup.exe)
-- [Apple silicon Mac archive](https://github.com/huangbinjie/pawprint/releases/download/v0.13.1/Pawprint-0.13.1-mac-arm64.zip)
-- [Release notes and SHA-256 files](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.1)
+- [Windows 10/11 x64 installer](https://github.com/huangbinjie/pawprint/releases/download/v0.13.2/Pawprint-0.13.2-win-x64-setup.exe)
+- [Apple silicon Mac archive](https://github.com/huangbinjie/pawprint/releases/download/v0.13.2/Pawprint-0.13.2-mac-arm64.zip)
+- [Release notes and SHA-256 files](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.2)
 
 Verify the accompanying checksum. Windows beta builds are unsigned; run the installer and retain your existing app data. Mac beta builds have a complete ad-hoc bundle signature but are not Developer ID signed or notarized. Move Pawprint to Applications. If macOS cannot verify the developer, choose Done, then **System Settings → Privacy & Security → Open Anyway**. If macOS says damaged, stop and report that build. See [Mac signing and installation](docs/RELEASE_SIGNING.md) and [Windows support](docs/WINDOWS.md).
 
