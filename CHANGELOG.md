@@ -2,6 +2,12 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.13.3 — 2026-10-10
+
+- Show approval signs only for pending manual command, file-change and permission requests observed through compatible desktop IPC. Automatic review no longer raises an approval sign.
+- Clear signs when requests are resolved, subscriptions disconnect or an incompatible stream is received. Preserve question reminders and other client hook rules.
+- Remove obsolete Pawprint PermissionRequest hooks and old approval markers on upgrade; report subscription availability in client helpers.
+
 ## 0.13.2 — 2026-10-09
 
 - Fix stale Bash approval signs after a tool completes: match the command without the approval-only description.

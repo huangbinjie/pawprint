@@ -1,3 +1,4 @@
+import {ApprovalObserver} from './approval-observer.mjs';
 import {AttentionBridge,validAttentionEvent} from './attention.mjs';
 import {hooksSettingsScript} from './client-settings.mjs';
 import {ClientNavigation} from './client-navigation.mjs';
@@ -65,7 +66,7 @@ app.setPath(
     ? process.env.PAWPRINT_TEST_DATA
     : path.join(app.getPath("appData"), "Pawprint"),
 );
-let attentionBridge,attentionBubbleEvent;
+let attentionBridge,approvalObserver,attentionBubbleEvent;
 let petControls,setupGuideWindow,setupGuideValue;
 let petControlsRevealed=false,petControlsHideTimer;
 let petControlsPressed=false,petControlsInteractive=false;
@@ -132,7 +133,7 @@ function snapshot() {
     workNote:workNoteValue,
     setupGuide:setupGuideValue,
     controlsRevealed:petControlsRevealed,
-    attention:attentionBridge?.snapshot() || {status:"off",supported:process.platform==="darwin",lastEventAt:null},
+    attention:attentionBridge ? {...attentionBridge.snapshot(),approval:approvalObserver?.snapshot()} : {status:"off",supported:process.platform==="darwin",lastEventAt:null},
     lan: lan?.auth
       ? lan.snapshot()
       : {
@@ -1250,6 +1251,7 @@ else {
           );
         if(attentionBridge && attentionBridge.directory!==selected && store.state.settings.attentionEnabled){await attentionBridge.uninstall();await enqueue(()=>mutate({type:'attention-settings',enabled:false}));}
         if(attentionBridge)attentionBridge.directory=selected;
+        await approvalObserver?.configure(store.state.settings.attentionEnabled===true);
         await enqueue(async () => {
           const next = structuredClone(store.state);
           next.settings.codexHome = selected;
@@ -1279,9 +1281,9 @@ else {
       });
       register('paw:attention-connect',async()=>{
         const installed=await attentionBridge.install();await enqueue(()=>mutate({type:'attention-settings',enabled:true}));
-        await attentionBridge.configure(true);await activity?.refreshAttention();return {...installed,state:snapshot()};
+        await attentionBridge.configure(true);await approvalObserver?.configure(true);await activity?.refreshAttention();return {...installed,state:snapshot()};
       });
-      register('paw:attention-disconnect',async()=>{let error;try{await attentionBridge.uninstall();}catch(e){error=e;}await attentionBridge.configure(false);await enqueue(()=>mutate({type:'attention-settings',enabled:false}));if(error)throw new Error('Reminders are stopped. Existing hooks.json could not be changed; remove Pawprint’s rules in your client if needed.');return snapshot();});
+      register('paw:attention-disconnect',async()=>{let error;try{await attentionBridge.uninstall();}catch(e){error=e;}await attentionBridge.configure(false);await approvalObserver?.configure(false);await enqueue(()=>mutate({type:'attention-settings',enabled:false}));if(error)throw new Error('Reminders are stopped. Existing hooks.json could not be changed; remove Pawprint’s rules in your client if needed.');return snapshot();});
       register("paw:activity-panel",createWorkPanel);
       register("paw:activity-panel-hide",hideWorkPanel);
       register("paw:activity-open", async (threadId) => {
@@ -1403,6 +1405,10 @@ else {
       await lan.init();
       const clientDirectory=store.state.settings.codexHome || (test&&process.env.PAWPRINT_TEST_CODEX_HOME) || defaultCodexHome();
       attentionBridge=new AttentionBridge({dataDirectory:app.getPath('userData'),directory:clientDirectory,execPath:process.execPath,relayPath:path.join(here,'attention-hook.cjs'),onEvents:receiveAttention,onChange:()=>{if(!quitting)broadcast();}});
+      // Persisted Hook approvals have no proof of a pending human request.
+      const legacyApprovals=workState(store.state).recent.flatMap(r=>(r.attentions || (r.attention?[r.attention]:[])).filter(a=>a.kind==='approval').map(a=>({threadId:r.threadId,action:'resolved',requestId:a.id,at:Math.max(Date.now(),a.at)})));
+      if(legacyApprovals.length)await enqueue(()=>mutate({type:'_work-attention',events:legacyApprovals}));
+      approvalObserver=new ApprovalObserver({getDirectory:()=>attentionBridge.directory,getThreads:()=>workState(store.state).recent.map(r=>r.threadId),onEvents:receiveAttention,onChange:()=>{if(!quitting)broadcast();}});
       await attentionBridge.configure(store.state.settings.attentionEnabled===true);
       if(store.state.settings.attentionEnabled)await attentionBridge.prepareDefaults();
       if(store.state.settings.activityEnabled&&!workState(store.state).recent.length){
@@ -1413,6 +1419,7 @@ else {
       await syncActivity();
       if(store.state.settings.attentionEnabled)await activity.refreshAttention();
       await queue;await syncWorkTitles();
+      await approvalObserver.configure(store.state.settings.attentionEnabled===true);
       workTitlesTimer=setInterval(()=>{
         void syncWorkTitles();
         if(store.state.settings.attentionEnabled&&attentionBridge.snapshot().status==='question-only')void attentionBridge.prepareDefaults();
@@ -1490,7 +1497,7 @@ else {
       event.preventDefault();
       void rememberPosition();
       quitting = true;
-      void Promise.all([workTitlesPending, queue, attentionBridge?.close(), lan?.close(), activity?.close(), quota?.close()]).finally(() => app.quit());
+      void Promise.all([workTitlesPending, queue, attentionBridge?.close(), approvalObserver?.close(), lan?.close(), activity?.close(), quota?.close()]).finally(() => app.quit());
     }
   });
 }

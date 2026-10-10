@@ -21,7 +21,8 @@ function normalizeHook(input,now=Date.now()){
   if(!input||!UUID.test(input.session_id||''))return null;
   const event=input.hook_event_name,name=input.tool_name;
   const base={version:1,eventId:randomUUID(),threadId:input.session_id.toLowerCase(),at:now};
-  if(event==='PermissionRequest')return {...base,action:'waiting',kind:'approval',requestId:requestKey(input,'approval')};
+  // This pre-review hook also fires for automatic review, not just human prompts.
+  if(event==='PermissionRequest')return null;
   if(event==='PreToolUse'&&questionTool(name)&&!name.endsWith('_async'))return {...base,action:'waiting',kind:'question',requestId:requestKey(input,'question')};
   if(event==='PostToolUse'){
     if(questionTool(name)){
@@ -32,7 +33,7 @@ function normalizeHook(input,now=Date.now()){
       }
       return {...base,action:'resolved',kind:'question',requestId:requestKey(input,'question')};
     }
-    return {...base,action:'resolved',kind:'approval',requestId:requestKey(input,'approval')};
+    return null;
   }
   if(['Stop','Interrupt','SessionEnd','UserPromptSubmit'].includes(event))return {...base,action:'clear',kind:null,requestId:null};
   return null;

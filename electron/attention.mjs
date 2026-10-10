@@ -6,7 +6,6 @@ import {validWorkId} from '../core/work.mjs';
 const MARKER='--pawprint-attention-v1';
 const questionMatcher='request_user_input(_async)?$|AskUserQuestion$';
 export const PAWPRINT_HOOKS=[
-  {event:'PermissionRequest',label:'Pawprint · Approval alerts',purpose:'Shows when the client requests approval.'},
   {event:'PreToolUse',label:'Pawprint · Question alerts',purpose:'Tracks explicit questions before a blocking tool waits.'},
   {event:'PostToolUse',label:'Pawprint · Answered request cleanup',purpose:'Keeps accepted async questions waiting and clears answered requests.'},
   {event:'SessionEnd',label:'Pawprint · Closed chat cleanup',purpose:'Clears requests when the chat closes.'},
@@ -17,6 +16,7 @@ export const PAWPRINT_HOOKS=[
 const quote=value=>`'${String(value).replaceAll("'", "'\\''")}'`;
 export function validAttentionEvent(r,now=Date.now()){
   return r?.version===1&&typeof r.eventId==='string'&&r.eventId.length>0&&r.eventId.length<=100&&validWorkId(r.threadId)&&Number.isFinite(r.at)&&r.at<=now+10000&&now-r.at<24*60*60*1000&&['waiting','resolved','clear'].includes(r.action)&&
+    (r.kind!=='approval'||r.action!=='waiting'||r.source==='desktop-ipc')&&
     (r.action==='clear'||(['approval','question'].includes(r.kind)&&typeof r.requestId==='string'&&/^[a-f0-9]{64}$/.test(r.requestId)));
 }
 export class AttentionBridge{
@@ -34,7 +34,8 @@ export class AttentionBridge{
     try{
       let rules={};try{rules=JSON.parse(await readFile(path.join(this.directory,'hooks.json'),'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
       const installed=PAWPRINT_HOOKS.every(r=>rules.hooks?.[r.event]?.some(g=>g.hooks?.some(h=>h.command?.includes(MARKER)&&h.command.includes(quote(this.relay))&&h.command.includes(quote(this.execPath))&&h.statusMessage===r.label)));
-      if(installed){try{
+      const legacyApproval=rules.hooks?.PermissionRequest?.some(g=>g.hooks?.some(h=>h.command?.includes(MARKER)&&h.command.includes(quote(this.relay))));
+      if(installed&&!legacyApproval){try{
         const source=await readFile(this.relayPath),existing=await readFile(this.relay);
         if(!source.equals(existing)){
           const temporary=this.relay+'.tmp';await writeFile(temporary,source,{mode:0o600,flush:true});await rename(temporary,this.relay);
@@ -57,7 +58,11 @@ export class AttentionBridge{
     const command=`ELECTRON_RUN_AS_NODE=1 ${quote(this.execPath)} ${quote(this.relay)} ${quote(this.journal)} ${MARKER}`;
     const next=structuredClone(current);next.hooks||={};
     const owned=h=>typeof h.command==='string'&&h.command.includes(MARKER)&&h.command.includes(quote(this.relay));
-    const entries=[['PermissionRequest',null],['PreToolUse',questionMatcher],['PostToolUse','Bash|apply_patch|mcp__.*|request_user_input(_async)?$|AskUserQuestion$'],['Stop',null],['Interrupt',null],['SessionEnd',null],['UserPromptSubmit',null]];
+    if(Array.isArray(next.hooks.PermissionRequest)){
+      next.hooks.PermissionRequest=next.hooks.PermissionRequest.map(g=>({...g,hooks:(g.hooks||[]).filter(h=>!owned(h))})).filter(g=>g.hooks.length);
+      if(!next.hooks.PermissionRequest.length)delete next.hooks.PermissionRequest;
+    }
+    const entries=[['PreToolUse',questionMatcher],['PostToolUse','Bash|apply_patch|mcp__.*|request_user_input(_async)?$|AskUserQuestion$'],['Stop',null],['Interrupt',null],['SessionEnd',null],['UserPromptSubmit',null]];
     for(const [event,matcher] of entries){
       const groups=next.hooks[event]||[];
       if(!Array.isArray(groups))throw new Error('Existing hook rules are invalid. They have not been changed.');
@@ -101,7 +106,7 @@ export class AttentionBridge{
     const lines=(this.pending+bytes).split('\n');this.pending=lines.pop();
     for(const line of lines){
       if(this.discard){this.discard=false;continue;}
-      try{const r=JSON.parse(line);if(validAttentionEvent(r,this.now())&&!this.seen.has(r.eventId)){this.seen.add(r.eventId);events.push(r);if(this.seen.size>2048)this.seen.delete(this.seen.values().next().value);}}catch{}
+      try{const r=JSON.parse(line);if(r.kind!=='approval'&&validAttentionEvent(r,this.now())&&!this.seen.has(r.eventId)){this.seen.add(r.eventId);events.push(r);if(this.seen.size>2048)this.seen.delete(this.seen.values().next().value);}}catch{}
     }
     if(this.pending.length>10000)this.pending='';
     if(events.length){this.publish({status:'connected',lastEventAt:Math.max(...events.map(e=>e.at))});await this.onEvents(events);}

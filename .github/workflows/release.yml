@@ -112,6 +112,15 @@ jobs:
           - Improved QR visiting-card spacing and image import buttons; the native file input stays hidden.
           - Clearer usage typography and complete English text for populated reports, pricing states and daily tables.
           NOTES
+          elif [ "$GITHUB_REF_NAME" = v0.13.3 ]; then
+            cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+
+          ## Pawprint 0.13.3
+          - Approval signs now follow pending manual requests from compatible desktop IPC. Automatic review no longer raises a sign; answering questions still does.
+          - Clear approval signs as soon as requests are resolved, on disconnect, or if the internal IPC stream becomes incompatible. Show subscription availability in client helpers.
+          - Remove obsolete Pawprint approval hooks and old approval markers on upgrade, preserving question reminders and unrelated client rules.
+          - Desktop IPC is an internal interface and may change with client updates. Approval signs are suppressed when it is unavailable.
+          NOTES
           elif [ "$GITHUB_REF_NAME" = v0.13.2 ]; then
             cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
 
