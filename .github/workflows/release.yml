@@ -112,6 +112,15 @@ jobs:
           - Improved QR visiting-card spacing and image import buttons; the native file input stays hidden.
           - Clearer usage typography and complete English text for populated reports, pricing states and daily tables.
           NOTES
+          elif [ "$GITHUB_REF_NAME" = v0.14.2 ]; then
+            cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+
+          ## Pawprint 0.14.2 — Connection switching fix
+          - Fix switching back to ChatGPT after changing models in Codex. Normal model selections and equivalent formatting no longer cause configuration conflicts; external provider or connection edits are still protected.
+          - Restore the most recent OpenAI model choice after a connection round trip.
+          - Show switch progress, success and errors directly beside the connection button.
+          - Changing defaults while Codex runs affects new local chats; existing and remote chats are not automatically migrated. Provider management remains macOS-only.
+          NOTES
           elif [ "$GITHUB_REF_NAME" = v0.14.1 ]; then
             cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
 

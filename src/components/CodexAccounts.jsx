@@ -2,9 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 export default function CodexAccounts({ titleLabels, mode = 'connections' }) {
   const api = window.pawprint;
   const [status,setStatus]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
-  const [form,setForm]=useState({name:'',baseUrl:'',model:'',apiKey:''}),[adding,setAdding]=useState(false),[deleting,setDeleting]=useState(null);
+  const [form,setForm]=useState({name:'',baseUrl:'',model:'',apiKey:''}),[adding,setAdding]=useState(false),[deleting,setDeleting]=useState(null),[selectionFeedback,setSelectionFeedback]=useState(null);
   const modal=useRef(null),titleState=titleLabels||status?.titleLabels;
-  const run=async fn=>{setBusy(true);setError('');try{const r=await fn();if(!r.ok)throw Error(r.error);setStatus(r.data);return true;}catch(e){setError(e.message);return false;}finally{setBusy(false);}};
+  const run=async (fn,onFailure)=>{setBusy(true);setError('');try{const r=await fn();if(!r.ok)throw Error(r.error);setStatus(r.data);return true;}catch(e){if(onFailure)onFailure(e.message);else setError(e.message);return false;}finally{setBusy(false);}};
+  const choose=async id=>{
+    setSelectionFeedback({id,error:false,text:'正在切换默认连接…'});
+    if(await run(()=>api.codexAccounts('switch',{id}),text=>setSelectionFeedback({id,error:true,text})))
+      setSelectionFeedback({id,error:false,text:'默认连接已切换。请新建会话；正在运行的会话保持原连接。'});
+  };
+  const feedback=id=>selectionFeedback?.id===id?<p className={`codex-selection-feedback ${selectionFeedback.error?'is-error':''}`} role={selectionFeedback.error?'alert':'status'}>{selectionFeedback.text}</p>:null;
   useEffect(()=>{void run(()=>api.codexAccounts('status'));},[]);
   useEffect(()=>{if(adding)modal.current?.showModal();else modal.current?.close();},[adding]);
   const field=(key,label,placeholder,type='text')=><label>{label}<input aria-label={label} type={type} placeholder={placeholder} value={form[key]} autoComplete="off" required disabled={busy} onChange={e=>setForm({...form,[key]:e.target.value})}/></label>;
@@ -20,8 +26,8 @@ export default function CodexAccounts({ titleLabels, mode = 'connections' }) {
       <div className="codex-current"><span>默认连接</span><strong translate="no">{status.providers.find(p=>p.id===status.selected)?.name||(status.selected==='openai'?'ChatGPT / OpenAI':status.selected)} · {status.model||'—'}</strong><small>{status.running?'Codex 正在运行':'Codex 未运行'}</small></div>
       <p>更新默认连接后，请新建会话；已有会话不会自动切换。</p>
       <div className="codex-provider-list">
-        <div className={`codex-provider ${status.selected==='openai'?'is-selected':''}`}><div><strong>ChatGPT / OpenAI</strong><p>使用已有登录</p></div><button className="button secondary" disabled={busy||!status.supported} onClick={()=>run(()=>api.codexAccounts('switch',{id:'openai'}))}>{status.selected==='openai'?'已选用':'选用 ChatGPT'}</button></div>
-        {status.providers.map(p=><div key={p.id} className={`codex-provider ${status.selected===p.id?'is-selected':''}`}><div><strong translate="no">{p.name}</strong><p translate="no">{p.model}</p></div><div className="codex-actions"><button className="button secondary" aria-label={`选用 ${p.name}`} disabled={busy||!status.supported} onClick={()=>run(()=>api.codexAccounts('switch',{id:p.id}))}>{status.selected===p.id?'已选用':'选用'}</button><button className="button secondary" disabled={busy} onClick={()=>setDeleting(p)} aria-label={`删除 ${p.name}`}>删除</button></div></div>)}
+        <div className={`codex-provider ${status.selected==='openai'?'is-selected':''}`}><div><strong>ChatGPT / OpenAI</strong><p>使用已有登录</p>{feedback('openai')}</div><button className="button secondary" disabled={busy||!status.supported} onClick={()=>choose('openai')}>{status.selected==='openai'?'已选用':'选用 ChatGPT'}</button></div>
+        {status.providers.map(p=><div key={p.id} className={`codex-provider ${status.selected===p.id?'is-selected':''}`}><div><strong translate="no">{p.name}</strong><p translate="no">{p.model}</p>{feedback(p.id)}</div><div className="codex-actions"><button className="button secondary" aria-label={`选用 ${p.name}`} disabled={busy||!status.supported} onClick={()=>choose(p.id)}>{status.selected===p.id?'已选用':'选用'}</button><button className="button secondary" disabled={busy} onClick={()=>setDeleting(p)} aria-label={`删除 ${p.name}`}>删除</button></div></div>)}
       </div>
       <div className="codex-actions"><button className="button" disabled={busy||!status.supported} onClick={()=>setAdding(true)}>添加 Provider</button></div>
       <details><summary>切换说明</summary><p>{status.notice}</p><p>第三方服务需支持 Responses API。默认配置不代表远端或已有会话已切换。</p></details>

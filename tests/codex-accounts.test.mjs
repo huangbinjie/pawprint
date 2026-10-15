@@ -28,7 +28,7 @@ test('switch round trip preserves unrelated settings, comments, login and exclud
 test('switch defaults while Codex runs and reject external managed changes',async t=>{
   const f=await fixture(t), id=(await f.manager.add(input)).providers[0].id;f.setRunning(true);
   assert.equal((await f.manager.switch(id)).selected,id);assert.equal((await f.manager.switch('openai')).selected,'openai');
-  await f.manager.switch(id);await writeFile(f.manager.file,(await readFile(f.manager.file,'utf8')).replace('example-model','manual-edit'));
+  await f.manager.switch(id);await writeFile(f.manager.file,(await readFile(f.manager.file,'utf8')).replace('https://example.com/v1','https://changed.example/v1'));
   await assert.rejects(f.manager.switch('openai'),/外部修改/);
 });
 test('preserve external changes outside managed fields and handle multiple providers and deletion',async t=>{
@@ -82,7 +82,7 @@ test('deleting selected provider restores ChatGPT and removes config definition 
 });
 test('selected provider deletion refuses external config changes and preserves credentials',async t=>{
   const f=await fixture(t),id=(await f.manager.add(input)).providers[0].id;await f.manager.switch(id);
-  await writeFile(f.manager.file,(await readFile(f.manager.file,'utf8')).replace('example-model','manual-model'));
+  await writeFile(f.manager.file,(await readFile(f.manager.file,'utf8')).replace('https://example.com/v1','https://changed.example/v1'));
   await assert.rejects(f.manager.remove(id),/外部修改/);assert.equal(f.secrets.has(id),true);assert.equal(f.manager.state.providers.length,1);
 });
 test('failed Keychain deletion restores the selected provider for retry',async t=>{
@@ -93,4 +93,22 @@ test('failed Keychain deletion restores the selected provider for retry',async t
 test('unsupported platforms can read metadata without invoking macOS process inspection',async t=>{
  const f=await fixture(t);const manager=new CodexAccounts({directory:f.directory,dataDirectory:f.dataDirectory,platform:'win32',running:async()=>{throw Error('must not inspect macOS processes');}});
  await manager.load();const status=await manager.status();assert.equal(status.supported,false);assert.equal(status.running,false);assert.equal(status.selected,'openai');
+});
+test('Codex model picker changes do not block switching back to ChatGPT while running',async t=>{
+ const f=await fixture(t),id=(await f.manager.add(input)).providers[0].id;f.setRunning(true);await f.manager.switch(id);
+ await writeFile(f.manager.file,(await readFile(f.manager.file,'utf8')).replace('model = "example-model"','model = "gpt-from-picker"'));
+ assert.equal((await f.manager.switch('openai')).selected,'openai');assert.equal(parse(await readFile(f.manager.file,'utf8')).model,'gpt-original');
+ // Remember the most recently selected OpenAI model for the next round trip.
+ await writeFile(f.manager.file,(await readFile(f.manager.file,'utf8')).replace('gpt-original','new-official-model'));
+ await f.manager.switch(id);await f.manager.switch('openai');assert.equal(parse(await readFile(f.manager.file,'utf8')).model,'new-official-model');
+});
+test('an externally changed provider still prevents accidental overwrites',async t=>{
+ const f=await fixture(t),id=(await f.manager.add(input)).providers[0].id;await f.manager.switch(id);
+ const modified=(await readFile(f.manager.file,'utf8')).replace(`model_provider = "${id}"`,'model_provider = "external-provider"');await writeFile(f.manager.file,modified);
+ await assert.rejects(f.manager.switch('openai'),/外部修改/);assert.equal(await readFile(f.manager.file,'utf8'),modified);
+});
+test('equivalent provider formatting from the client does not count as a connection change',async t=>{
+ const f=await fixture(t),id=(await f.manager.add(input)).providers[0].id;await f.manager.switch(id);
+ await writeFile(f.manager.file,(await readFile(f.manager.file,'utf8')).replace('name = "My Provider"','name  =  "My Provider" # client formatting').replace(`model_provider = "${id}"`,`model_provider  =  "${id}" # unchanged identity`));
+ assert.equal((await f.manager.switch('openai')).selected,'openai');
 });

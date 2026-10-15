@@ -50,6 +50,20 @@ test('native pet menu and independent Codex Provider form preserve current login
     await panel.getByRole('button',{name:'选用 Desktop test provider',exact:true}).click();
     await expect(panel.locator('.codex-current')).toContainText('Desktop test provider · test-model');
     expect(parse(await readFile(path.join(codexHome,'config.toml'),'utf8')).model_provider).toBe(providerId);
+    // The client's model picker can change the model while keeping the provider.
+    await writeFile(path.join(codexHome,'config.toml'),(await readFile(path.join(codexHome,'config.toml'),'utf8')).replace('model = "test-model"','model = "picked-model"'));
+    await panel.getByRole('button',{name:'选用 ChatGPT',exact:true}).click();
+    await expect(panel.locator('.codex-provider').first().getByRole('status')).toContainText('默认连接已切换');
+    await expect(panel.locator('.codex-current')).toContainText('ChatGPT / OpenAI · gpt-existing');
+    await panel.getByRole('button',{name:'选用 Desktop test provider',exact:true}).click();
+    await expect(panel.locator('.codex-current')).toContainText('Desktop test provider · test-model');
+    const beforeConflict=await readFile(path.join(codexHome,'config.toml'),'utf8');
+    await writeFile(path.join(codexHome,'config.toml'),beforeConflict.replace('https://example.com/v1','https://changed.example/v1'));
+    await panel.getByRole('button',{name:'选用 ChatGPT',exact:true}).click();
+    await expect(panel.locator('.codex-provider').first().getByRole('alert')).toBeVisible();
+    await expect(panel.locator('.codex-provider').first().getByRole('alert')).toContainText('连接配置已被外部修改');
+    await writeFile(path.join(codexHome,'config.toml'),beforeConflict);
+
     await expect(panel.getByRole('button',{name:'删除 Desktop test provider',exact:true})).toBeEnabled();
     await panel.getByRole('button',{name:'删除 Desktop test provider',exact:true}).click();
     await expect(panel.getByText('将先恢复 ChatGPT 默认配置。',{exact:false})).toBeVisible();

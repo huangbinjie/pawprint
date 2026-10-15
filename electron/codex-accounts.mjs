@@ -159,7 +159,14 @@ export class CodexAccounts {
       await regular(this.file); const before = await optional(this.file), doc = parse(before);
       if (doc.profile || doc.forced_login_method === 'api') fail('配置启用了 profile 或强制 API 登录，请先手动处理，避免覆盖原有设置。');
       const current = { roots: roots(before), block: split(before).block };
-      if (this.state.managed && !isDeepStrictEqual(current, this.state.managed)) fail('模型或 Pawprint Provider 配置已被外部修改，已取消覆盖。请检查配置与备份。');
+      if (this.state.managed) {
+        const expectedProvider=parse(this.state.managed.roots.model_provider||'').model_provider||'openai';
+        if ((doc.model_provider||'openai')!==expectedProvider || !isDeepStrictEqual(parse(current.block),parse(this.state.managed.block)))
+          fail('Provider 选择或连接配置已被外部修改，已取消覆盖。请检查配置与备份。');
+        // Codex's model picker legitimately updates the root model without
+        // changing the connection. Do not treat that as a provider conflict.
+        if (expectedProvider==='openai' && this.state.baseline) this.state.baseline={...current.roots};
+      }
       if (!this.state.baseline) {
         if ((doc.model_provider || 'openai') !== 'openai' || current.block) fail('首次使用需要当前选择为 OpenAI/ChatGPT，不能覆盖已有自定义 Provider。');
         this.state.baseline = current.roots;

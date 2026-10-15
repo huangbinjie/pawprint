@@ -2,6 +2,13 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.14.2 — 2026-10-15
+
+- Fix switching back to ChatGPT after choosing a different model in Codex. Normal model selections and equivalent configuration formatting no longer block connection switches; external provider or connection changes still require review.
+- Remember the most recent OpenAI model choice when switching away and restore it when returning to ChatGPT.
+- Show switching progress, success and configuration errors beside the selected connection so feedback stays visible.
+- Changing the default connection while Codex runs still applies to new local chats; existing and remote chats are not automatically migrated.
+
 ## 0.14.1 — 2026-10-15
 
 - Bring connections, chat/reminder controls, provider-aware usage and advanced settings together in the new Codex Assistant page. Use a modal to add connections and keep local paths collapsed by default.

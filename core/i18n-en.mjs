@@ -1,5 +1,8 @@
 // English UI catalog. Keys are original source messages; game data and IDs stay unchanged.
 export default {
+  "正在切换默认连接…":"Switching default connection…",
+  "默认连接已切换。请新建会话；正在运行的会话保持原连接。":"Default connection switched. Start a new chat; running chats keep their original connection.",
+  "Provider 选择或连接配置已被外部修改，已取消覆盖。请检查配置与备份。":"Provider selection or connection settings changed outside Pawprint. Switching was cancelled; check the configuration and backup.",
   "自定义 Provider":"Custom provider",
   "按每条请求的模型名称匹配价格表，分别计算普通输入、缓存和输出费用；匹配不到的模型显示未定价。第三方参考费用不是实际账单。":"Match each request model to the price catalog and price ordinary input, cache and output separately. Unmatched models remain unpriced. Third-party reference cost is not the actual bill.",
   "（部分）":" (partial)",
