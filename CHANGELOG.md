@@ -2,7 +2,7 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
-## 0.14.0 — 2026-10-15
+## 0.14.1 — 2026-10-15
 
 - Bring connections, chat/reminder controls, provider-aware usage and advanced settings together in the new Codex Assistant page. Use a modal to add connections and keep local paths collapsed by default.
 - On macOS, manage custom Responses-compatible Codex API providers with keys stored in Keychain. Back up configuration, preserve ChatGPT login and unrelated settings, and allow changing defaults while Codex runs. Existing chats do not automatically switch; remote execution is not guaranteed to use local defaults.

@@ -112,10 +112,10 @@ jobs:
           - Improved QR visiting-card spacing and image import buttons; the native file input stays hidden.
           - Clearer usage typography and complete English text for populated reports, pricing states and daily tables.
           NOTES
-          elif [ "$GITHUB_REF_NAME" = v0.14.0 ]; then
+          elif [ "$GITHUB_REF_NAME" = v0.14.1 ]; then
             cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
 
-          ## Pawprint 0.14.0 — Codex Assistant
+          ## Pawprint 0.14.1 — Codex Assistant
           - One page for connections, chats/reminders, usage and advanced settings, with clearer spacing, generic examples and collapsed local paths.
           - macOS Codex API provider management: Keychain credentials, configuration backups/conflict checks, preserved ChatGPT login, and runtime changes to defaults for new local chats. Existing and remote chats are not silently migrated.
           - Delete the selected provider after restoring ChatGPT defaults. Historical usage retains readable connection names.

@@ -4,7 +4,7 @@
 
 **一点桌面陪伴，也帮你回到对的 Codex 会话。**
 
-[下载 v0.14.0](https://github.com/huangbinjie/pawprint/releases/tag/v0.14.0) · [官网](https://huangbinjie.github.io/pawprint/zh/) · [English](README.md)
+[下载 v0.14.1](https://github.com/huangbinjie/pawprint/releases/tag/v0.14.1) · [官网](https://huangbinjie.github.io/pawprint/zh/) · [English](README.md)
 
 爪印是一款独立开发的桌面伙伴，支持 Windows x64 和 Apple 芯片 Mac。猫咪随本机 Codex 活动成长，身边留着几个实用的工作入口。宠物、提醒和小游戏无需 API key，不额外发起模型请求。
 
@@ -56,9 +56,9 @@
 
 ## 安装
 
-- [Windows 10/11 x64 安装包](https://github.com/huangbinjie/pawprint/releases/download/v0.14.0/Pawprint-0.14.0-win-x64-setup.exe)
-- [Apple 芯片 Mac 压缩包](https://github.com/huangbinjie/pawprint/releases/download/v0.14.0/Pawprint-0.14.0-mac-arm64.zip)
-- [更新说明与 SHA-256 文件](https://github.com/huangbinjie/pawprint/releases/tag/v0.14.0)
+- [Windows 10/11 x64 安装包](https://github.com/huangbinjie/pawprint/releases/download/v0.14.1/Pawprint-0.14.1-win-x64-setup.exe)
+- [Apple 芯片 Mac 压缩包](https://github.com/huangbinjie/pawprint/releases/download/v0.14.1/Pawprint-0.14.1-mac-arm64.zip)
+- [更新说明与 SHA-256 文件](https://github.com/huangbinjie/pawprint/releases/tag/v0.14.1)
 
 请核对附带的校验文件。Windows 内测包未签名，运行安装程序并保留已有数据。Mac 内测包有完整的临时封装签名，但未使用 Developer ID 和苹果公证。把 Pawprint 放入 Applications；若提示无法验证开发者，点“完成”，到「系统设置 → 隐私与安全性」选择“仍要打开”。若提示已损坏，请停止并反馈该版本。详见 [Mac 签名与安装](docs/RELEASE_SIGNING.md)及 [Windows 支持](docs/WINDOWS.md)。
 

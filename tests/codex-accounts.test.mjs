@@ -20,7 +20,7 @@ test('switch round trip preserves unrelated settings, comments, login and exclud
   const switched=await f.manager.switch(id), text=await readFile(f.manager.file,'utf8'), config=parse(text);
   assert.equal(config.model_provider,id);assert.equal(config.model,'example-model');assert.equal(config.model_providers[id].auth.command,'/usr/bin/security');
   assert.ok(text.includes('[projects."/my/project"]\ntrust_level = "trusted"'));assert.ok(!text.includes(input.apiKey));
-  assert.equal(await readFile(switched.backupPath,'utf8'),f.original);assert.equal((await stat(switched.backupPath)).mode & 0o777,0o600);
+  assert.equal(await readFile(switched.backupPath,'utf8'),f.original);if(process.platform!=='win32')assert.equal((await stat(switched.backupPath)).mode & 0o777,0o600);
   assert.ok(!(await readFile(f.manager.stateFile,'utf8')).includes(input.apiKey));
   await f.manager.switch('openai');const restored=parse(await readFile(f.manager.file,'utf8'));assert.ok(restored.model_providers[id]);delete restored.model_providers;assert.deepEqual(restored,parse(f.original));assert.ok((await readFile(f.manager.file,'utf8')).includes('model = "gpt-original" # keep'));
   assert.equal(await readFile(path.join(f.directory,'auth.json'),'utf8'),'login-do-not-touch');
