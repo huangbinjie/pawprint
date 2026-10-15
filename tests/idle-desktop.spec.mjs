@@ -109,7 +109,7 @@ test("idle ball, real window roaming, hover stop, edge patrol and reduced motion
     await floating.waitForTimeout(6500);
     expect(await bounds()).toEqual(working);
     await appendFile(log, row("task_complete"));
-    await expect(floating.locator(".cat.perform")).toBeVisible({ timeout: 10000 });
+    await expect(floating.locator(".cat.reply-complete")).toBeVisible({ timeout: 10000 });
     expect(await bounds()).toEqual(working);
     await home.getByRole("switch", { name: "待机散步与玩耍", exact: true }).click();
     const after = (await home.evaluate(() => window.pawprint.getState())).data;
@@ -242,6 +242,7 @@ test('manual chase follows a far cursor in two dimensions while Codex is working
   await app.evaluate(({app,screen,BrowserWindow})=>{
    const path=process.getBuiltinModule('path'),req=process.getBuiltinModule('module').createRequire(path.join(app.getAppPath(),'package.json'));
    const {CodexActivity}=req('./electron/activity.mjs');CodexActivity.prototype.snapshot=()=>({enabled:true,status:'running',activeCount:1,event:null});
+   const {CursorTease}=req('./core/attention.mjs'),originalTease=CursorTease.prototype.step;CursorTease.prototype.step=function(input){const value=originalTease.call(this,input);globalThis.teaseSeenX=input.pointer?.x;return value;};
    const w=BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('#floating')),a=screen.getDisplayMatching(w.getBounds()).workArea;
    w.setPosition(a.x+200,a.y+400);globalThis.manualPlayArea=a;globalThis.manualPlayCursor={x:a.x+a.width-80,y:a.y+50};screen.getCursorScreenPoint=()=>globalThis.manualPlayCursor;
   });
@@ -288,10 +289,13 @@ test('wiggling over a small cat triggers a gaze and short chase without clicking
   await app.evaluate(({app,screen,BrowserWindow})=>{
    const path=process.getBuiltinModule('path'),req=process.getBuiltinModule('module').createRequire(path.join(app.getAppPath(),'package.json'));
    const {CodexActivity}=req('./electron/activity.mjs');CodexActivity.prototype.snapshot=()=>({enabled:true,status:'running',activeCount:1,event:null});
+   const {CursorTease}=req('./core/attention.mjs'),originalTease=CursorTease.prototype.step;CursorTease.prototype.step=function(input){const value=originalTease.call(this,input);globalThis.teaseSeenX=input.pointer?.x;return value;};
    const w=BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('#floating')),a=screen.getDisplayMatching(w.getBounds()).workArea;w.setPosition(a.x+200,a.y+350);globalThis.teaseBounds=w.getBounds();globalThis.teaseArea=a;
-   const b=globalThis.teaseBounds;globalThis.teaseCursor={x:b.x+b.width*.5,y:b.y+b.height*.5};screen.getCursorScreenPoint=()=>globalThis.teaseCursor;
+   globalThis.teaseCursor={x:-100000,y:-100000};screen.getCursorScreenPoint=()=>globalThis.teaseCursor;
   });
-  for(const ratio of [.5,.65,.35,.65,.35,.65]){await app.evaluate((_,r)=>{const b=globalThis.teaseBounds;globalThis.teaseCursor={x:b.x+b.width*r,y:b.y+b.height*.5};},ratio);await floating.waitForTimeout(110);}
+  // Opening Home briefly pauses pet interactions; start the gesture after it settles.
+  await floating.waitForTimeout(1100);
+  for(const ratio of [.5,.65,.35,.65,.35,.65]){await app.evaluate((_,r)=>{const b=globalThis.teaseBounds;globalThis.teaseCursor={x:b.x+b.width*r,y:b.y+b.height*.5};},ratio);await expect.poll(()=>app.evaluate(()=>globalThis.teaseSeenX===globalThis.teaseCursor.x)).toBe(true);}
   await expect(floating.locator('.behavior-mouse.phase-watch .cursor-attention')).toBeVisible();
   await expect(floating.locator('.cat.working')).toHaveCount(0);
   await floating.screenshot({path:info.outputPath('wiggle-noticed.png'),omitBackground:true});

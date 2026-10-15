@@ -3,6 +3,7 @@ import { mkdtemp, writeFile, readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { openHome } from "./helpers.mjs";
+import { Store } from "../core/store.mjs";
 import { dayKey } from "../core/economy.mjs";
 import { seedMatureCompanion } from "./fixtures/game.mjs";
 import { desktopUsageFixture } from "./fixtures/codex.mjs";
@@ -15,8 +16,15 @@ import {
   formatChance,
 } from "../core/genetics.mjs";
 
+async function seedChineseEmpty(directory) {
+  const store=new Store(directory);await store.load();
+  Object.assign(store.state.settings,{language:'zh',connected:false,attentionEnabled:false,quotaEnabled:false,activityEnabled:false,idleEnabled:false});
+  await store.save(store.state);
+}
+
 test("gene catalog exposes every obtainable allele, honest odds and appearance variants", async ({}, testInfo) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "pawprint-catalog-"));
+  await seedChineseEmpty(dir);
   const app = await electron.launch({
     args: ["."],
     env: { ...process.env, PAWPRINT_TEST_MODE: "1", PAWPRINT_TEST_DATA: dir },
@@ -68,7 +76,7 @@ test("gene catalog exposes every obtainable allele, honest odds and appearance v
         });
       }
     }
-    expect(count).toBe(171);
+    expect(count).toBe(GENE_COUNT);
     await home.getByRole("tab", { name: /^毛色/ }).click();
     await home.getByRole("button", { name: "传说", exact: true }).click();
     const expected = TRAITS.coat.filter(
@@ -88,6 +96,7 @@ test("gene catalog exposes every obtainable allele, honest odds and appearance v
 
 test("minimal floating lifecycle, double-click routes, background residency and position restore", async ({}, testInfo) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "pawprint-shell-"));
+  await seedChineseEmpty(dir);
   const env = {
     ...process.env,
     PAWPRINT_TEST_MODE: "1",
@@ -281,6 +290,7 @@ test("real desktop: hatch, connect, claim, breed, float, and persist", async ({}
 
 test("free first companion, new prices, juvenile gate and reversible garden placement", async ({}, testInfo) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "pawprint-garden-"));
+  await seedChineseEmpty(dir);
   const app = await electron.launch({
     args: ["."],
     env: { ...process.env, PAWPRINT_TEST_MODE: "1", PAWPRINT_TEST_DATA: dir },

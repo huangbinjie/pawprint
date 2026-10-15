@@ -5,7 +5,7 @@ import os from "node:os";
 import { seedMatureCompanion } from "./fixtures/game.mjs";
 import { Store } from "../core/store.mjs";
 import { dayKey } from "../core/economy.mjs";
-import { openHome } from "./helpers.mjs";
+import { openHome,openCodex } from "./helpers.mjs";
 const unlocalized = page => page.evaluate(() => {
   const texts=[], walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
   while(walker.nextNode()) {
@@ -42,9 +42,10 @@ test("floating canvas never scrolls; English covers all pages, menus and reactio
     const labels=await app.evaluate(()=>globalThis.pawMenuLabels);
     expect(labels).toContain('Quit Pawprint');expect(labels).toContain('Pawprint · 我的小屋');
     const missing={};
-    for(const tab of ['My Home','My Pets','Garden','Skills & Talents','Nearby Homes','Gene Catalog','Breeding','Usage & Wallet','Preferences']) {
+    for(const tab of ['My Home','My Pets','Garden','Skills & Talents','Nearby Homes','Gene Catalog','Breeding','Usage & Wallet','Codex Assistant','Preferences']) {
       await home.locator('.sidebar').getByRole('button',{name:new RegExp('^'+tab.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'))}).click();
       const texts=await unlocalized(home);if(texts.length)missing[tab]=texts;
+      if(tab==='Codex Assistant'){for(const name of ['Connections & providers','Chats & reminders','Usage & limits','Advanced settings']){await home.locator('.codex-tabs').getByRole('button',{name,exact:true}).click();const extra=await unlocalized(home);if(extra.length)missing[name]=extra;}}
       if(tab==='My Home')await expect(home.locator('[data-user-text]').filter({hasText:'我的小屋'}).first()).toBeVisible();
       if(['My Home','Skills & Talents','Preferences'].includes(tab))await home.screenshot({path:info.outputPath(`english-${tab.replaceAll(' ','-')}.png`)});
       if(tab==='Gene Catalog') {
@@ -67,6 +68,7 @@ test("floating canvas never scrolls; English covers all pages, menus and reactio
     expect(denied.ok).toBe(false);expect(denied.error).toContain('Not enough available pet coins');
     const after=(await home.evaluate(()=>window.pawprint.getState())).data;
     expect(after.pets).toEqual(beforeUI.pets);expect(after.balance).toBe(beforeUI.balance);
+    await openCodex(app,'sessions');
     await home.getByRole('switch',{name:'Codex conversation reactions'}).click();
     await expect(home.getByTestId('activity-status')).toContainText('Connected; waiting for new status records');
     const event=type=>JSON.stringify({type:'event_msg',timestamp:new Date().toISOString(),payload:{type,turn_id:'locale-turn'}})+'\n';
@@ -134,7 +136,7 @@ test('populated English usage and QR controls have no untranslated interface tex
   await home.locator('.usage-summary').screenshot({path:info.outputPath('english-usage-summary.png')});
   await home.locator('.model-list').screenshot({path:info.outputPath('english-model-details.png')});
   await home.locator('.usage-daily-details summary').click();expect(await unlocalized(home)).toEqual([]);
-  for(const tab of ['My Home','My Pets','Garden','Skills & Talents','Nearby Homes','Gene Catalog','Breeding','Usage & Wallet','Preferences']){
+  for(const tab of ['My Home','My Pets','Garden','Skills & Talents','Nearby Homes','Gene Catalog','Breeding','Usage & Wallet','Codex Assistant','Preferences']){
    await home.locator('.sidebar').getByRole('button',{name:new RegExp('^'+tab)}).click();
    expect(await unlocalized(home),tab).toEqual([]);
    if(tab==='Nearby Homes'){

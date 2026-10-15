@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {DatabaseSync} from 'node:sqlite';
-import {petControls,revealPetControls} from './helpers.mjs';
+import {openWorkPanelFromMenu} from './helpers.mjs';
 import { Store } from '../core/store.mjs';
 import { seedMatureCompanion } from './fixtures/game.mjs';
 const ids=['01a0f1ea-4534-7651-b950-045a233fe631','01a0f5f7-5a51-7483-9fe6-9e028bc08226','01a10440-119e-7497-bf8e-14c2b0f2f9a2'];
@@ -19,11 +19,11 @@ test('cat opens a separate recent-chat panel, pins and edits notes, then returns
  const store=new Store(dir);await store.load();await store.save(state);
  const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:dir,PAWPRINT_TEST_CODEX_HOME:codex,PAWPRINT_TEST_LAN:'1'}});
  try{
-  const floating=await app.firstWindow(),controls=await petControls(app);await expect(controls.getByRole('button',{name:'Recent Codex chats',exact:true})).toBeVisible();
-  const before=await stateOf(floating),bounds=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('#floating')).getBounds());
+  const floating=await app.firstWindow();await expect(floating.locator('.float-cat-button')).toBeVisible();
+  let before=await stateOf(floating);const bounds=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('#floating')).getBounds());
   await app.evaluate(({BrowserWindow,shell})=>{shell.openExternal=async url=>{globalThis.openedMiniChat=url;};const old=BrowserWindow.prototype.setIgnoreMouseEvents;BrowserWindow.prototype.setIgnoreMouseEvents=function(ignore,...rest){if(this.getTitle()==='Pawprint Work Bookmark')globalThis.bookmarkIgnoresMouse=ignore;return old.call(this,ignore,...rest);};});
-  await controls.getByRole('button',{name:'Return to current Codex chat',exact:true}).click();await expect.poll(()=>app.evaluate(()=>globalThis.openedMiniChat)).toBe(`codex://threads/${ids[0]}`);expect(app.windows().some(w=>w.url().endsWith('#workmini'))).toBe(false);await app.evaluate(()=>{delete globalThis.openedMiniChat;});
-  async function panel(){await revealPetControls(app);await controls.getByRole('button',{name:'Recent Codex chats',exact:true}).click();await expect.poll(()=>app.windows().some(w=>w.url().endsWith('#workmini'))).toBe(true);const page=app.windows().find(w=>w.url().endsWith('#workmini'));await expect(page.getByRole('heading',{name:'Recent chats',exact:true})).toBeVisible();return page;}
+  await floating.locator('.float-cat-button').dblclick();await expect.poll(()=>app.evaluate(()=>globalThis.openedMiniChat)).toBe(`codex://threads/${ids[0]}`);await expect.poll(async()=>(await stateOf(floating)).pets[0].companion?.counts?.touch).toBe(1);before=await stateOf(floating);expect(app.windows().some(w=>w.url().endsWith('#workmini'))).toBe(false);await app.evaluate(()=>{delete globalThis.openedMiniChat;});
+  async function panel(){const page=await openWorkPanelFromMenu(app);await expect(page.getByRole('heading',{name:'Recent chats',exact:true})).toBeVisible();return page;}
   let mini=await panel();await expect(mini.locator('.mini-chat')).toHaveCount(3);expect(app.windows().some(w=>/#(home|work)$/.test(w.url()))).toBe(false);
   expect(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('#floating')).getBounds())).toEqual(bounds);
   const placed=await app.evaluate(({BrowserWindow,screen})=>{const w=BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Pawprint Work Chats');return {bounds:w.getBounds(),area:screen.getDisplayMatching(w.getBounds()).workArea};});expect(placed.bounds.x).toBeGreaterThanOrEqual(placed.area.x);expect(placed.bounds.y+placed.bounds.height).toBeLessThanOrEqual(placed.area.y+placed.area.height);

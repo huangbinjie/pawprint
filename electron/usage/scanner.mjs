@@ -15,6 +15,7 @@ import {
   tokenCounts,
   canonicalModel,
   estimateCost,
+  estimateReferenceCost,
   PRICING_VERSION,
 } from "./pricing.mjs";
 export const READER_VERSION = "builtin-codex-v1";
@@ -101,6 +102,8 @@ function validCachedData(data) {
         Number.isSafeInteger(r.tokens) &&
         r.tokens >= 0 &&
         (r.usd === null || (Number.isFinite(r.usd) && r.usd >= 0)) &&
+        (r.referenceUSD === null || (Number.isFinite(r.referenceUSD) && r.referenceUSD >= 0)) &&
+        [null,"provider","model-reference"].includes(r.referenceSource) &&
         typeof r.gap === "boolean",
     )
   );
@@ -192,6 +195,7 @@ export async function parseSession(
     }
     if (record.type === "turn_context") {
       model = canonicalModel(payload.model);
+      if(typeof payload.model_provider === 'string' && payload.model_provider.trim())provider=payload.model_provider.trim();
       tier =
         typeof payload.service_tier === "string" ? payload.service_tier : null;
       turn =
@@ -203,6 +207,7 @@ export async function parseSession(
     if (record.type !== "event_msg") continue;
     if (payload.type === "thread_settings_applied") {
       const settings = payload.settings ?? payload;
+      if(typeof settings.model_provider === 'string' && settings.model_provider.trim())provider=settings.model_provider.trim();
       if (typeof settings.model === "string")
         model = canonicalModel(settings.model);
       if (typeof settings.service_tier === "string")
@@ -260,6 +265,7 @@ export async function parseSession(
       : old && total.input >= old.input && total.output >= old.output;
     const signature = hash(`${id}|${turn}|${total.input}|${total.output}`);
     const usd = estimateCost(model, last, tier, catalog, provider);
+    const reference = estimateReferenceCost(model, last, tier, catalog, provider);
     rows.push({
       id: signature,
       at: timestamp,
@@ -269,6 +275,8 @@ export async function parseSession(
       counts: last,
       provider,
       usd,
+      referenceUSD:reference?.usd ?? null,
+      referenceSource:reference?.source ?? null,
       gap: !!gap,
     });
     if (gap) issues.add("missing-request-details");
@@ -362,7 +370,7 @@ export async function scanUsage({
   start.setDate(start.getDate() - (days - 1));
   const startMs = start.getTime(),
     scope = hash(
-      `${READER_VERSION}|parser-6|${pricingVersion}|${root}|${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
+      `${READER_VERSION}|parser-8|${pricingVersion}|${root}|${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
     );
   const sourceId = hash(`${READER_VERSION}|${root}`);
   const { files, issues: discoveryIssues } = await discover(
@@ -435,7 +443,9 @@ export async function scanUsage({
       else if (
         prior.tokens !== row.tokens ||
         prior.model !== row.model ||
-        prior.usd !== row.usd
+        prior.provider !== row.provider ||
+        prior.usd !== row.usd ||
+        prior.referenceUSD !== row.referenceUSD
       ) {
         complete = false;
         issues.add("conflicting-duplicate");
@@ -478,6 +488,7 @@ export async function scanUsage({
     const modelKey = `${row.provider}/${row.model}`;
     const model = day.models.get(modelKey) ?? {
       provider: row.provider,
+      referenceCost:0, referenceUnpriced:0, usesModelReference:false,
       inputTokens: 0, cachedTokens: 0, writeTokens: 0, outputTokens: 0,
       modelName: row.model,
       cost: 0,
@@ -485,6 +496,9 @@ export async function scanUsage({
       unpriced: 0,
     };
     model.totalTokens += row.tokens;
+    if(row.referenceUSD===null || row.gap)model.referenceUnpriced++;
+    else model.referenceCost+=row.referenceUSD;
+    if(row.referenceSource==='model-reference')model.usesModelReference=true;
     for (const [field, key] of [["inputTokens","input"],["cachedTokens","cached"],["writeTokens","write"],["outputTokens","output"]]) model[field] += row.counts?.[key] ?? 0;
     if (row.usd === null || row.gap) model.unpriced++;
     else model.cost += row.usd;
@@ -497,6 +511,8 @@ export async function scanUsage({
     modelBreakdowns: [...models.values()].map((m) => ({
       ...m,
       knownCost: m.cost,
+      referenceKnownCost:m.referenceCost,
+      referenceCost:m.referenceUnpriced ? null : m.referenceCost,
       cost: m.unpriced ? null : m.cost,
     })),
   }));

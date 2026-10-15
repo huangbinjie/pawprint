@@ -132,3 +132,35 @@ function catalogCost(entry, counts, tier = "default") {
   const factor = tier === "flex" || tier === "batch" ? 0.5 : 1;
   return parts.reduce((sum, [n, rate]) => sum + (n ? n * rate : 0), 0) * factor / 1e6;
 }
+
+// Display-only comparison value. Provider-specific costs above remain unchanged
+// for accounting/rewards; a model match does not establish the gateway's bill.
+export function estimateReferenceCost(model, counts, tier, catalog, provider = 'openai') {
+  const direct = estimateCost(model, counts, tier, catalog, provider);
+  if (direct !== null) return {usd:direct, source:'provider'};
+  const original=String(model).trim().toLowerCase();
+  const slash=original.indexOf('/');
+  const namespace=slash>0?original.slice(0,slash):null;
+  const bare=slash>0?original.slice(slash+1):original;
+  const clean=bare.replace(/-\d{4}-\d{2}-\d{2}$/,'');
+  if(namespace && (catalog?.[namespace] || namespace==='openai')) {
+    const usd=estimateCost(bare,counts,tier,catalog,namespace);
+    return usd===null?null:{usd,source:'model-reference'};
+  }
+  // Canonical OpenAI IDs use the OpenAI catalog/offline table as a reference,
+  // even when the actual request was sent through a third-party gateway.
+  if(catalog?.openai?.models?.[bare] || catalog?.openai?.models?.[clean] || PRICES[canonicalModel(bare)]) {
+    const usd=estimateCost(bare,counts,tier,catalog,'openai');
+    return usd===null?null:{usd,source:'model-reference'};
+  }
+  const matches=[];
+  for(const [id,entry] of Object.entries(catalog||{})) {
+    if(!entry?.models?.[bare] && !entry?.models?.[clean])continue;
+    const usd=estimateCost(bare,counts,tier,catalog,id);
+    if(usd===null)return null;
+    matches.push(usd);
+  }
+  // Do not guess between conflicting vendor prices for an unqualified model ID.
+  if(!matches.length || matches.some(value=>Math.abs(value-matches[0])>1e-12))return null;
+  return {usd:matches[0],source:'model-reference'};
+}

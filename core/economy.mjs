@@ -159,6 +159,10 @@ export function normalizeReport(raw, now) {
       unpriced: row.unpriced ?? report.coverage?.unpriced ?? 0,
       models: (row.modelBreakdowns || []).map((m) => ({
         provider: m.provider ?? "openai",
+        referenceUSD:Number.isFinite(m.referenceCost)?m.referenceCost:null,
+        referenceKnownUSD:Number.isFinite(m.referenceKnownCost)?m.referenceKnownCost:null,
+        referenceUnpriced:Number.isSafeInteger(m.referenceUnpriced)?m.referenceUnpriced:(m.unpriced??0),
+        usesModelReference:m.usesModelReference===true,
         tokens: m.totalTokens ?? 0,
         inputTokens: m.inputTokens ?? 0, cachedTokens: m.cachedTokens ?? 0,
         writeTokens: m.writeTokens ?? 0, outputTokens: m.outputTokens ?? 0,

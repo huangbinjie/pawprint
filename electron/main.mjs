@@ -1,3 +1,5 @@
+import {CodexProviderTitles} from "./codex-provider-titles.mjs";
+import {CodexAccounts} from "./codex-accounts.mjs";
 import {ApprovalObserver} from './approval-observer.mjs';
 import {AttentionBridge,validAttentionEvent} from './attention.mjs';
 import {hooksSettingsScript} from './client-settings.mjs';
@@ -67,6 +69,8 @@ app.setPath(
     : path.join(app.getPath("appData"), "Pawprint"),
 );
 let attentionBridge,approvalObserver,attentionBubbleEvent;
+let codexAccounts, codexAccountsPromise, providerTitles;
+let codexProviderNames = {};
 let petControls,setupGuideWindow,setupGuideValue;
 let petControlsRevealed=false,petControlsHideTimer;
 let petControlsPressed=false,petControlsInteractive=false;
@@ -116,6 +120,8 @@ const enqueue = (task) => {
 function snapshot() {
   return {
     ...structuredClone(store.state),
+    providerNames: {...codexProviderNames},
+    providerTitles: providerTitles?.snapshot() || {enabled:true,status:"idle",error:null,updated:0},
     platform: process.platform,
     appVersion: app.getVersion(),
     availableCoins: availableCoins(store.state),
@@ -188,7 +194,7 @@ function createHome(section) {
     "genes",
     "garden",
     "talents",
-    "nearby", "work", "play",
+    "nearby", "work", "play", "codex",
   ].includes(section)
     ? section
     : null;
@@ -238,7 +244,9 @@ async function openClient() {
   return true;
 }
 async function receiveAttention(events) {
-  if(quitting || store.state.settings.attentionEnabled!==true)return;
+  if(quitting)return;
+  void providerTitles?.refresh();
+  if(store.state.settings.attentionEnabled!==true)return;
   const valid=events.filter(e=>validAttentionEvent(e));if(!valid.length)return;
   const changed=await enqueue(async()=>{
     const before=workState(store.state).recent;
@@ -399,6 +407,32 @@ function menuAction(action) {
     .then(action)
     .catch((error) => dialog.showErrorBox(tr("爪印"), tr(error.message)));
 }
+const managedCodexHome = () => test ? (process.env.PAWPRINT_TEST_CODEX_HOME || path.join(app.getPath('userData'),'codex')) : defaultCodexHome();
+async function getCodexAccounts() {
+  // Account settings use the actual Codex home, never the usage-import directory.
+  const directory = managedCodexHome();
+  if (!codexAccountsPromise) codexAccountsPromise = (async () => {
+    const manager = new CodexAccounts({directory, dataDirectory: app.getPath('userData')});
+    await manager.load(); codexAccounts = manager; return manager;
+  })().catch(error => { codexAccountsPromise = null; throw error; });
+  return codexAccountsPromise;
+}
+async function showCodexAccountsMenu() {
+  const manager = await getCodexAccounts(), status = await manager.status();
+  const choose = id => menuAction(async () => {
+    await manager.switch(id);
+    await dialog.showMessageBox({type:'info', message:'Codex 默认配置已更新', detail:'无需退出 Codex。请新建会话并确认 Provider 与模型；客户端界面可能仍保留原选择。已有会话不会自动切换，ChatGPT 登录未被修改。'});
+  });
+  buildMenu([
+    {label:'Codex Account Manager', enabled:false},
+    {label:'当前 ChatGPT / OpenAI 登录', type:'checkbox', checked:status.selected==='openai', enabled:status.supported, click:()=>choose('openai')},
+    ...status.providers.map(p=>({label:`${p.name} · ${p.model}`, type:'checkbox', checked:status.selected===p.id, enabled:status.supported, click:()=>choose(p.id)})),
+    {type:'separator'},
+    {label:'无需退出；新建会话后确认 Provider 与模型', enabled:false},
+    {label:'添加 / 管理 Provider…', click:()=>createHome('codex')},
+  ]).popup({window:floating});
+}
+
 function menuTemplate() {
   const pet = store.state.pets.find((p) => p.id === store.state.activePetId);
   const q = quotaPresentation(quota?.snapshot(), store.state.settings.quotaWindow, Date.now(), language());
@@ -433,6 +467,8 @@ function menuTemplate() {
       { label: "English", type: "radio", checked: language() === "en", click: () => menuAction(() => enqueue(() => mutate({ type: "language", value: "en" }))) },
     ] },
     { type: "separator" },
+    { label: "打开 Codex 助手", click:()=>createHome("codex") },
+    { label: "Codex 账号与 Provider", enabled: process.platform === "darwin", click: () => menuAction(showCodexAccountsMenu) },
     { label: "打开爪印小屋", click: () => createHome("home") },
     { label: "用量与钱包", click: () => createHome("usage") },
     { label: "基因图鉴与获取概率", click: () => createHome("genes") },
@@ -1014,6 +1050,7 @@ function register(channel, handler) {
       (note && channel!=='paw:state') ||
       (dock && !['paw:state','paw:activity-open','paw:activity-panel','paw:helper-guide'].includes(channel)) ||
       (guide && !['paw:state','paw:helper-settings','paw:helper-close'].includes(channel)) ||
+      (channel === 'paw:codex-accounts' && !owner) ||
       ((channel.startsWith('paw:card-') || channel.startsWith('paw:activity-') || channel.startsWith('paw:attention-')) && !owner && !mini && !dock))return {ok:false,error:tr('来源无效。')};
     if(channel==='paw:command' && /^(play-|room-|work-)/.test(args[0]?.type || '') && !owner && !mini)return {ok:false,error:tr('来源无效。')};
     try {
@@ -1110,6 +1147,19 @@ else {
         cardVisitors.push(visit);await enqueue(async()=>{const next=structuredClone(store.state);next.cardFootprints=[...(next.cardFootprints||[]),{petId:card.pet.id,name:card.pet.name,at:Date.now()}].slice(-50);await store.save(next);});syncGuests();broadcast();return snapshot();
       });
       register('paw:card-dismiss', id => {dismissCardVisitor(id);return snapshot();});
+      register("paw:codex-accounts", async (action, input) => {
+        const manager = await getCodexAccounts(); let result;
+        if (action === 'status') result = await manager.status();
+        else if (action === 'add') result = await manager.add(input);
+        else if (action === 'switch') result = await manager.switch(input?.id);
+        else if (action === 'remove') result = await manager.remove(input?.id);
+        else if (action === 'title-labels') { await providerTitles.configure(input?.enabled); result = await manager.status(); }
+        else if (action === 'title-labels-refresh') { await providerTitles.refresh(); result = await manager.status(); }
+        else throw new Error('无效的账号操作。');
+        codexProviderNames=result.providerNames||{};
+        broadcast();
+        return {...result, titleLabels:providerTitles?.snapshot()};
+      });
       register("paw:state", () => snapshot());
       register("paw:update-check", () => updates.check());
       register("paw:update-install", () => {
@@ -1403,6 +1453,12 @@ else {
           : {}),
       });
       await lan.init();
+      providerTitles = new CodexProviderTitles({
+        directory:managedCodexHome(),
+        dataDirectory:app.getPath('userData'),onChange:()=>{if(!quitting)broadcast();},
+        ...(process.platform!=='darwin'?{readCandidates:async()=>[]}:{}),
+      });
+      await providerTitles.load(); providerTitles.start();
       const clientDirectory=store.state.settings.codexHome || (test&&process.env.PAWPRINT_TEST_CODEX_HOME) || defaultCodexHome();
       attentionBridge=new AttentionBridge({dataDirectory:app.getPath('userData'),directory:clientDirectory,execPath:process.execPath,relayPath:path.join(here,'attention-hook.cjs'),onEvents:receiveAttention,onChange:()=>{if(!quitting)broadcast();}});
       // Persisted Hook approvals have no proof of a pending human request.
@@ -1497,7 +1553,7 @@ else {
       event.preventDefault();
       void rememberPosition();
       quitting = true;
-      void Promise.all([workTitlesPending, queue, attentionBridge?.close(), approvalObserver?.close(), lan?.close(), activity?.close(), quota?.close()]).finally(() => app.quit());
+      void Promise.all([providerTitles?.close(), workTitlesPending, queue, attentionBridge?.close(), approvalObserver?.close(), lan?.close(), activity?.close(), quota?.close()]).finally(() => app.quit());
     }
   });
 }

@@ -4,11 +4,19 @@
 
 **一点桌面陪伴，也帮你回到对的 Codex 会话。**
 
-[下载 v0.13.3](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.3) · [官网](https://huangbinjie.github.io/pawprint/zh/) · [English](README.md)
+[下载 v0.14.0](https://github.com/huangbinjie/pawprint/releases/tag/v0.14.0) · [官网](https://huangbinjie.github.io/pawprint/zh/) · [English](README.md)
 
 爪印是一款独立开发的桌面伙伴，支持 Windows x64 和 Apple 芯片 Mac。猫咪随本机 Codex 活动成长，身边留着几个实用的工作入口。宠物、提醒和小游戏无需 API key，不额外发起模型请求。
 
 ![爪印的奶油色虎斑猫咪](site/pet.png)
+
+## Codex 助手
+
+在一个页面管理连接、会话提醒、用量和高级设置。**macOS** 可添加支持 Responses API 的第三方 Provider，密钥保存到 Keychain；无需退出 Codex 即可修改新会话的默认连接。修改配置前会备份，保留原来的 ChatGPT 登录。已有会话不会自动切换，远端会话不保证使用本机配置。
+
+可为确认来源的本地第三方会话标题加上 Provider 前缀。用量按连接名称和模型汇总 Token，并提供基于模型价格表的参考费用；未知模型保留未定价。参考费用不等于实际扣费或余额。本机路径默认收起，公开示例只使用通用数据。
+
+详见 [Codex 账号管理功能及限制](docs/codex-account-manager.md)。
 
 ## 小小的爪子，实用的帮助
 
@@ -48,9 +56,9 @@
 
 ## 安装
 
-- [Windows 10/11 x64 安装包](https://github.com/huangbinjie/pawprint/releases/download/v0.13.3/Pawprint-0.13.3-win-x64-setup.exe)
-- [Apple 芯片 Mac 压缩包](https://github.com/huangbinjie/pawprint/releases/download/v0.13.3/Pawprint-0.13.3-mac-arm64.zip)
-- [更新说明与 SHA-256 文件](https://github.com/huangbinjie/pawprint/releases/tag/v0.13.3)
+- [Windows 10/11 x64 安装包](https://github.com/huangbinjie/pawprint/releases/download/v0.14.0/Pawprint-0.14.0-win-x64-setup.exe)
+- [Apple 芯片 Mac 压缩包](https://github.com/huangbinjie/pawprint/releases/download/v0.14.0/Pawprint-0.14.0-mac-arm64.zip)
+- [更新说明与 SHA-256 文件](https://github.com/huangbinjie/pawprint/releases/tag/v0.14.0)
 
 请核对附带的校验文件。Windows 内测包未签名，运行安装程序并保留已有数据。Mac 内测包有完整的临时封装签名，但未使用 Developer ID 和苹果公证。把 Pawprint 放入 Applications；若提示无法验证开发者，点“完成”，到「系统设置 → 隐私与安全性」选择“仍要打开”。若提示已损坏，请停止并反馈该版本。详见 [Mac 签名与安装](docs/RELEASE_SIGNING.md)及 [Windows 支持](docs/WINDOWS.md)。
 

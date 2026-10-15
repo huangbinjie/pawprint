@@ -2,6 +2,15 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.14.0 — 2026-10-15
+
+- Bring connections, chat/reminder controls, provider-aware usage and advanced settings together in the new Codex Assistant page. Use a modal to add connections and keep local paths collapsed by default.
+- On macOS, manage custom Responses-compatible Codex API providers with keys stored in Keychain. Back up configuration, preserve ChatGPT login and unrelated settings, and allow changing defaults while Codex runs. Existing chats do not automatically switch; remote execution is not guaranteed to use local defaults.
+- Delete a selected provider by restoring ChatGPT defaults first, with confirmation and configuration conflict checks. Retain name-only history so old usage cards show connection names instead of internal IDs.
+- Optionally prefix verified local third-party chat titles with their provider name. Leave OpenAI, archived, subagent and unverified remote chats unchanged; avoid duplicate prefixes.
+- Attribute tokens to each request's recorded provider. Calculate display-only reference costs from provider/model pricing or a canonical model match, including separate input, cache and output counts. Unknown or conflicting models remain unpriced; actual provider bills and pet reward rules are unchanged.
+- Replace personal examples with generic placeholders and clarify local-record coverage, provider balances and subscription snapshot limits. Preserve existing pets, genes, wallet, reminders and preferences.
+
 ## 0.13.3 — 2026-10-10
 
 - Show approval signs only for pending manual command, file-change and permission requests observed through compatible desktop IPC. Automatic review no longer raises an approval sign.

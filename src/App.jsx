@@ -49,6 +49,9 @@ import Cat from "./components/Cat.jsx";
 import Egg from "./components/Egg.jsx";
 import TalentRoom from "./components/TalentRoom.jsx";
 import PetSizeControl from "./components/PetSizeControl.jsx";
+import {providerLabel} from "../core/provider-labels.mjs";
+import CodexHub, {ProviderUsage} from "./components/CodexHub.jsx";
+import CodexAccounts from "./components/CodexAccounts.jsx";
 import QuotaSettings from "./components/QuotaSettings.jsx";
 import SocialScene from "./components/SocialScene.jsx";
 import SkillOdds from "./components/SkillOdds.jsx";
@@ -93,7 +96,7 @@ const tabs = [
   ["collection", PawPrint, "宠物图鉴"],
   ["garden", Leaf, "后花园"],
   ["talents", Music, "才艺小剧场"],
-  ["work", MessageCircle, "工作会话"],
+  ["codex", Plug, "Codex 助手"],
   ["play", Sparkles, "玩耍与房间"],
   ["nearby", Wifi, "附近的小屋"],
   ["genes", Dna, "基因图鉴"],
@@ -101,6 +104,7 @@ const tabs = [
   ["usage", ChartNoAxesCombined, "用量与钱包"],
 ];
 const titles = {
+  codex:["Codex 助手","连接、会话与用量，集中在这里。"],
   work:["工作会话","记住下一步，轻松回到工作。"],
   play:["玩耍与房间","一小会儿陪伴，慢慢变得更默契。"],
   home: ["我的小屋", "一点点努力，一点点长大。"],
@@ -142,6 +146,8 @@ export default function App() {
   const [partnerId, setPartnerId] = useState(PARTNERS[0].id);
   const drag = useRef(null);
   const wasDragged = useRef(false);
+  const petMenuTimer = useRef(null);
+  useEffect(() => () => clearTimeout(petMenuTimer.current), []);
   const guestId = window.location.hash.startsWith("#guest:")
     ? window.location.hash.slice(7)
     : null;
@@ -194,6 +200,9 @@ export default function App() {
           : setToast({ text: result.error, error: true }),
       );
     return api.onState(setState);
+  }, []);
+  useEffect(() => {
+    if(api && !isFloating && !isControls && !isSetupGuide && !isWorkMini && !isWorkNote && !guestId)void api.codexAccounts('status');
   }, []);
   useEffect(() => api?.onIdle(idle => {
     if (idle.mode !== "rest") setPetting(false);
@@ -473,19 +482,24 @@ export default function App() {
           className={`float-cat-button ${pet ? "" : "float-egg-button"}`}
           data-interactive
           aria-label={pet ? "桌面宠物" : "桌面宠物蛋"}
-          title="晃晃鼠标逗它 · 点击摸摸 · 双击返回会话 · 右键菜单"
+          title="晃晃鼠标逗它 · 点击摸摸与菜单 · 双击返回会话 · 右键菜单"
           onContextMenu={(event) => {
             event.preventDefault();
             api.showMenu();
           }}
           onDoubleClick={async () => {
+            clearTimeout(petMenuTimer.current);
             if (wasDragged.current) return;
             if (!returnChat) { api.showHome("work"); return; }
             const result = await api.openWorkSession(returnChat.threadId);
             if (!result.ok) setToast({ text: result.error, error: true });
           }}
           onClick={() => {
-            if (!wasDragged.current) greetPet();
+            if (!wasDragged.current) {
+              greetPet();
+              clearTimeout(petMenuTimer.current);
+              petMenuTimer.current = setTimeout(() => api.showMenu(), 500);
+            }
           }}
           onPointerDown={(event) => {
             if (event.button !== 0) return;
@@ -645,6 +659,118 @@ export default function App() {
               <span className="edition">LOCAL COMPANION</span>
             )}
           </div>
+          {tab === "codex" && <CodexHub
+            connections={<CodexAccounts titleLabels={state.providerTitles} />}
+            sessions={<><CodexAccounts mode="titles" titleLabels={state.providerTitles} /><section className="card codex-card"><h3>会话联动</h3><div className="setting-row">
+                  <div>
+                    <strong>Codex 会话联动</strong>
+                    <p>开工时陪伴，明确区分本轮回复结束、已停止和状态未知。没有其他进行中或状态不明的会话时才庆祝；不发币、不调用模型。</p>
+                    <p>只观察开启后的新记录，不补播历史，也不把回复结束当作整个任务完成。读取不到开始或记录中断时显示未知；失败和审批状态暂不推断。</p>
+                  </div>
+                  <button role="switch" aria-label="Codex 会话联动"
+                    aria-checked={state.settings.activityEnabled === true}
+                    className={`toggle ${state.settings.activityEnabled ? "on" : ""}`}
+                    disabled={working}
+                    onClick={() => command({ type: "activity", enabled: !state.settings.activityEnabled, topics: state.settings.activityTopics === true })}>
+                    <span />
+                  </button>
+                </div>
+                <div className="setting-row">
+                  <div>
+                    <strong>显示大致主题</strong>
+                    <p>在本机读取新消息并按关键词分类，只显示“写代码”“做设计”等固定标签。可能判断不准，不展示或保存原文，不上传或发送给同事。</p>
+                  </div>
+                  <button role="switch" aria-label="显示大致主题"
+                    aria-checked={state.settings.activityTopics === true}
+                    className={`toggle ${state.settings.activityTopics ? "on" : ""}`}
+                    disabled={working || !state.settings.activityEnabled}
+                    onClick={() => command({ type: "activity", enabled: true, topics: !state.settings.activityTopics })}>
+                    <span />
+                  </button>
+                </div>
+                <p className="setting-footnote" data-testid="activity-status">
+                  {{ off: "会话联动已关闭", connecting: "正在连接本地记录…", idle: "已连接，等待新状态记录", completed: "最近一轮回复已结束", stopped: "最近一轮已停止", running: `陪伴中 · ${state.activity?.activeCount || 0} 个会话`, unknown: "记录不完整，暂不能确认当前状态", unavailable: "无法读取会话记录，请检查上方目录；会自动重试" }[state.activity?.status || "off"]}
+                  {" · "}{t("仅显示本机 Codex 的新记录。返回入口打开最近有状态更新的会话，不发送消息。")}
+                  {state.activity?.target?.threadId && <button className="text-button" onClick={async()=>{const r=await api.openWorkSession();if(!r.ok)setToast({text:r.error,error:true});}}>{t("返回最近 Codex 会话")}</button>}
+                </p></section><WorkPanel state={state} command={command} working={working} onError={text=>setToast({text,error:true})}/></>}
+            usage={<><ProviderUsage providerNames={state.providerNames} report={state.usage.report} busy={state.busy||!state.settings.connected} onRefresh={refresh}/><section className="card codex-card"><h3>订阅额度快照</h3><p>不是实时账号查询，不代表当前第三方 API 的余额。</p></section><QuotaSettings state={state} now={tick} working={working} onCommand={command} onRecover={async () => {
+                const r = await api.recoverTray();
+                if (r.ok) setState(r.data); else setToast({ text: r.error, error: true });
+              }} onRefresh={async () => {
+                const r = await api.refreshQuota();
+                if (r.ok) setState(r.data); else setToast({ text: r.error, error: true });
+              }} /></>}
+            advanced={<><CodexAccounts mode="advanced" titleLabels={state.providerTitles}/>
+<section className="card settings-card">
+                <h3>用量连接</h3>
+                <div className="setting-row">
+                  <div>
+                    <strong>Codex 本地记录 · 内置读取</strong>
+                    <p>
+                      从本机记录提取
+                      token、模型和时间，使用内置价格表估算；不保存对话正文，不接触登录凭据。
+                    </p>
+                  </div>
+                  {state.settings.connected ? (
+                    <button
+                      className="button secondary"
+                      disabled={working}
+                      onClick={() =>
+                        command(
+                          { type: "disconnect" },
+                          "已停止自动读取，已有宠物和币已保留",
+                        )
+                      }
+                    >
+                      断开连接
+                    </button>
+                  ) : (
+                    connectButton()
+                  )}
+                </div>
+                <div className="setting-row">
+                  <div>
+                    <strong>记录目录</strong>
+                    <p>
+                      自动查找本机 .codex；使用自定义目录时，可以在这里选择。
+                    </p>
+                    <details><summary>查看本机路径</summary><code className="usage-directory" translate="no">
+                      {state.usageDirectory}
+                    </code></details>
+                  </div>
+                  <button
+                    className="button secondary"
+                    disabled={working}
+                    onClick={async () => {
+                      setWorking(true);
+                      try {
+                        const result = await api.chooseUsageDirectory();
+                        if (result.ok) setState(result.data);
+                        else setToast({ text: result.error, error: true });
+                      } finally {
+                        setWorking(false);
+                      }
+                    }}
+                  >
+                    选择记录目录
+                  </button>
+                </div>
+                <div className="setting-row">
+                  <div>
+                    <strong>手动刷新用量</strong>
+                    <p>连接后每 15 分钟自动读取；遇到错误可以手动重试。</p>
+                  </div>
+                  <button
+                    className="button secondary"
+                    disabled={!state.settings.connected || state.busy}
+                    onClick={refresh}
+                  >
+                    <RefreshCw size={15} />
+                    {state.busy ? "读取中…" : "现在刷新"}
+                  </button>
+                </div>
+              </section></>}
+          />}
           {tab === "work" && <WorkPanel state={state} command={command} working={working} onError={text=>setToast({text,error:true})}/>}
           {tab === "play" && <PlayRoom state={state} command={command} working={working} now={tick}/>}
           {tab === "home" && (
@@ -1437,8 +1563,8 @@ export default function App() {
                 <div className="model-list">
                   {today?.models.map((model) => (
                     <article className="usage-model" key={`${model.provider}/${model.name}`}>
-                      <header><div><span className="usage-provider"><RawText>{model.provider}</RawText></span><h4><RawText>{model.name}</RawText></h4></div><strong>{money(model.usd ?? (model.knownUSD > 0 ? model.knownUSD : null))}</strong></header>
-                      <p className="usage-model-total">{f("共 {0} token", compact(model.tokens))}{model.unpriced > 0 && <span className="usage-pending">{f("{0} 条待定价", model.unpriced)}</span>}</p>
+                      <header><div><span className="usage-provider"><RawText>{providerLabel(model.provider,state.providerNames,t('自定义 Provider'))}</RawText></span><h4><RawText>{model.name}</RawText></h4></div><strong>{money(model.referenceUSD ?? model.usd ?? (model.referenceKnownUSD > 0 ? model.referenceKnownUSD : model.knownUSD > 0 ? model.knownUSD : null))}</strong></header>
+                      <p className="usage-model-total">{f("共 {0} token", compact(model.tokens))}{(model.referenceUnpriced ?? model.unpriced) > 0 && <span className="usage-pending">{f("{0} 条待定价", model.referenceUnpriced ?? model.unpriced)}</span>}</p>
                       <dl className="usage-token-details">
                         <div><dt>{t("输入（含缓存）")}</dt><dd>{compact(model.inputTokens)}</dd></div>
                         <div><dt>{t("缓存读取")}</dt><dd>{compact(model.cachedTokens)}</dd></div>
@@ -1584,82 +1710,6 @@ export default function App() {
                   if (!r.ok) setToast({text:r.error,error:true});
                 }}>{state.update.release.manual ? (state.settings.language === "en" ? `Open download page for v${state.update.release.version}` : `打开 v${state.update.release.version} 下载页`) : (state.settings.language === "en" ? `Update to v${state.update.release.version}` : `立即更新到 v${state.update.release.version}`)}</button>}
               </section>
-              <QuotaSettings state={state} now={tick} working={working} onCommand={command} onRecover={async () => {
-                const r = await api.recoverTray();
-                if (r.ok) setState(r.data); else setToast({ text: r.error, error: true });
-              }} onRefresh={async () => {
-                const r = await api.refreshQuota();
-                if (r.ok) setState(r.data); else setToast({ text: r.error, error: true });
-              }} />
-              <section className="card settings-card">
-                <h3>用量连接</h3>
-                <div className="setting-row">
-                  <div>
-                    <strong>Codex 本地记录 · 内置读取</strong>
-                    <p>
-                      从本机记录提取
-                      token、模型和时间，使用内置价格表估算；不保存对话正文，不接触登录凭据。
-                    </p>
-                  </div>
-                  {state.settings.connected ? (
-                    <button
-                      className="button secondary"
-                      disabled={working}
-                      onClick={() =>
-                        command(
-                          { type: "disconnect" },
-                          "已停止自动读取，已有宠物和币已保留",
-                        )
-                      }
-                    >
-                      断开连接
-                    </button>
-                  ) : (
-                    connectButton()
-                  )}
-                </div>
-                <div className="setting-row">
-                  <div>
-                    <strong>记录目录</strong>
-                    <p>
-                      自动查找本机 .codex；使用自定义目录时，可以在这里选择。
-                    </p>
-                    <code className="usage-directory" translate="no">
-                      {state.usageDirectory}
-                    </code>
-                  </div>
-                  <button
-                    className="button secondary"
-                    disabled={working}
-                    onClick={async () => {
-                      setWorking(true);
-                      try {
-                        const result = await api.chooseUsageDirectory();
-                        if (result.ok) setState(result.data);
-                        else setToast({ text: result.error, error: true });
-                      } finally {
-                        setWorking(false);
-                      }
-                    }}
-                  >
-                    选择记录目录
-                  </button>
-                </div>
-                <div className="setting-row">
-                  <div>
-                    <strong>手动刷新用量</strong>
-                    <p>连接后每 15 分钟自动读取；遇到错误可以手动重试。</p>
-                  </div>
-                  <button
-                    className="button secondary"
-                    disabled={!state.settings.connected || state.busy}
-                    onClick={refresh}
-                  >
-                    <RefreshCw size={15} />
-                    {state.busy ? "读取中…" : "现在刷新"}
-                  </button>
-                </div>
-              </section>
               <section className="card settings-card">
                 <h3>桌面陪伴</h3>
                 <PetSizeControl value={Math.round((state.settings.petScale || 1) * 100)} onState={setState} onError={text => setToast({ text, error: true })} />
@@ -1705,38 +1755,6 @@ export default function App() {
                   <button className="button secondary" disabled={!pet || !state.settings.floating} onClick={async()=>{const r=await api.previewCompanion();if(!r.ok)setToast({text:r.error,error:true});}}>试试打个招呼</button>
                 </div>
                 {state.idle?.reducedMotion && <p className="setting-footnote">系统已开启“减少动态效果”，散步与玩球暂时休息。</p>}
-                <div className="setting-row">
-                  <div>
-                    <strong>Codex 会话联动</strong>
-                    <p>开工时陪伴，明确区分本轮回复结束、已停止和状态未知。没有其他进行中或状态不明的会话时才庆祝；不发币、不调用模型。</p>
-                    <p>只观察开启后的新记录，不补播历史，也不把回复结束当作整个任务完成。读取不到开始或记录中断时显示未知；失败和审批状态暂不推断。</p>
-                  </div>
-                  <button role="switch" aria-label="Codex 会话联动"
-                    aria-checked={state.settings.activityEnabled === true}
-                    className={`toggle ${state.settings.activityEnabled ? "on" : ""}`}
-                    disabled={working}
-                    onClick={() => command({ type: "activity", enabled: !state.settings.activityEnabled, topics: state.settings.activityTopics === true })}>
-                    <span />
-                  </button>
-                </div>
-                <div className="setting-row">
-                  <div>
-                    <strong>显示大致主题</strong>
-                    <p>在本机读取新消息并按关键词分类，只显示“写代码”“做设计”等固定标签。可能判断不准，不展示或保存原文，不上传或发送给同事。</p>
-                  </div>
-                  <button role="switch" aria-label="显示大致主题"
-                    aria-checked={state.settings.activityTopics === true}
-                    className={`toggle ${state.settings.activityTopics ? "on" : ""}`}
-                    disabled={working || !state.settings.activityEnabled}
-                    onClick={() => command({ type: "activity", enabled: true, topics: !state.settings.activityTopics })}>
-                    <span />
-                  </button>
-                </div>
-                <p className="setting-footnote" data-testid="activity-status">
-                  {{ off: "会话联动已关闭", connecting: "正在连接本地记录…", idle: "已连接，等待新状态记录", completed: "最近一轮回复已结束", stopped: "最近一轮已停止", running: `陪伴中 · ${state.activity?.activeCount || 0} 个会话`, unknown: "记录不完整，暂不能确认当前状态", unavailable: "无法读取会话记录，请检查上方目录；会自动重试" }[state.activity?.status || "off"]}
-                  {" · "}{t("仅显示本机 Codex 的新记录。返回入口打开最近有状态更新的会话，不发送消息。")}
-                  {state.activity?.target?.threadId && <button className="text-button" onClick={async()=>{const r=await api.openWorkSession();if(!r.ok)setToast({text:r.error,error:true});}}>{t("返回最近 Codex 会话")}</button>}
-                </p>
                 <div className="setting-row">
                   <div>
                     <strong>悬浮宠物</strong>

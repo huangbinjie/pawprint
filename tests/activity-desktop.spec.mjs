@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, appendFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { seedMatureCompanion } from "./fixtures/game.mjs";
-import { openHome } from "./helpers.mjs";
+import { openHome,openCodex } from "./helpers.mjs";
 
 test('completed reply keeps a direct return arrow after the gesture ends',async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'paw-return-')),profile=path.join(root,'profile'),codex=path.join(root,'codex');await seedMatureCompanion(profile);await mkdir(path.join(codex,'sessions'),{recursive:true});
@@ -12,7 +12,7 @@ test('completed reply keeps a direct return arrow after the gesture ends',async(
  const row=(type,turn='one')=>JSON.stringify({type:'event_msg',timestamp:new Date().toISOString(),payload:{type,turn_id:turn}})+'\n';
  const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:profile,PAWPRINT_TEST_CODEX_HOME:codex,PAWPRINT_TEST_LAN:'1'}});
  try{
-  const floating=await app.firstWindow(),home=await openHome(app,'settings');
+  const floating=await app.firstWindow(),home=await openCodex(app,'sessions');
   await home.getByRole('switch',{name:'Codex 会话联动',exact:true}).click();
   await expect(home.getByTestId('activity-status')).toContainText('等待新状态记录');
   await expect(floating.locator('.reply-return')).toHaveCount(0);
@@ -47,7 +47,7 @@ test('parallel rounds do not celebrate one ended reply or a stopped round',async
  const row=(type,id)=>JSON.stringify({type:'event_msg',timestamp:new Date().toISOString(),payload:{type,turn_id:id}})+'\n';
  const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:profile,PAWPRINT_TEST_CODEX_HOME:codex,PAWPRINT_TEST_LAN:'1'}});
  try{
-  const home=await openHome(app,'settings');await home.getByRole('switch',{name:'Codex 会话联动',exact:true}).click();await expect(home.getByRole('switch',{name:'Codex 会话联动',exact:true})).toBeEnabled();
+  const home=await openCodex(app,'sessions');await home.getByRole('switch',{name:'Codex 会话联动',exact:true}).click();await expect(home.getByRole('switch',{name:'Codex 会话联动',exact:true})).toBeEnabled();
   await appendFile(files[0],row('task_started','one'));await appendFile(files[1],row('task_started','two'));
   await expect.poll(async()=>(await home.evaluate(()=>window.pawprint.getState())).data.activity.activeCount).toBe(2);
   await appendFile(files[0],row('task_complete','one'));

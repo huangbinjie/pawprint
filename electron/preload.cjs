@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld("pawprint", {
   disconnectAttention: () => ipcRenderer.invoke("paw:attention-disconnect"),
   openWorkSession: id => ipcRenderer.invoke("paw:activity-open", id),
   openClient: () => ipcRenderer.invoke("paw:client"),
+  codexAccounts: (action, input) => ipcRenderer.invoke("paw:codex-accounts", action, input),
   showMenu: () => ipcRenderer.invoke("paw:menu"),
   setInteractive: (interactive) => ipcRenderer.send("paw:pointer", interactive),
   setControlsHovered: hovered => ipcRenderer.send("paw:controls-hover", hovered),

@@ -13,7 +13,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { tokenCounts, estimateCost } from "../electron/usage/pricing.mjs";
+import { tokenCounts, estimateCost, estimateReferenceCost } from "../electron/usage/pricing.mjs";
 import { scanUsage, parseSession } from "../electron/usage/scanner.mjs";
 import { readUsage } from "../electron/local-usage.mjs";
 import {
@@ -457,3 +457,37 @@ test("upgrading a zero-use baseline does not withhold today's newly priceable re
  observeUsage(state,report,now);
  assert.equal(availableReward(state,now),0);
 });
+test('provider changes keep token totals separate and add model reference without altering reward prices',()=>fixture(async(root,cacheDirectory)=>{
+ const a=context(now-99,'gpt-6-astra','a'),b=context(now-79,'gpt-6-astra','b');b.payload.model_provider='custom-test';
+ await logFile(root,'provider-switch.jsonl',[
+  meta('provider-switch',now-100),a,meter(now-90,tokens()),b,meter(now-70,tokens(2000,200),tokens()),
+  {timestamp:new Date(now-60).toISOString(),type:'event_msg',payload:{type:'thread_settings_applied',settings:{model_provider:'openai'}}},
+  context(now-59,'gpt-6-astra','c'),meter(now-50,tokens(3000,300),tokens())
+ ],now);
+ const raw=await scanUsage({codexHome:root,cacheDirectory,now}),report=normalizeReport(raw,now),day=report.days.at(-1);
+ assert.equal(day.tokens,3300);const custom=day.models.find(m=>m.provider==='custom-test'),official=day.models.find(m=>m.provider==='openai');
+ assert.equal(custom.tokens,1100);assert.equal(custom.usd,null);assert.equal(custom.unpriced,1);assert.ok(custom.referenceUSD>0);assert.equal(custom.referenceUnpriced,0);assert.equal(custom.usesModelReference,true);assert.equal(official.tokens,2200);assert.ok(official.usd>0);
+}));
+
+test('third-party model reference uses JSON input/cache/write/output rates and retains provider-specific accounting',()=>{
+ const n=tokenCounts(tokens(1000,50,200,100)),catalog={openai:{models:{'gpt-6-astra':{cost:{input:2,cache_read:0.2,cache_write:3,output:8}}}}};
+ const ref=estimateReferenceCost('gpt-6-astra',n,'default',catalog,'my-gateway');
+ close(ref.usd,0.00214);assert.equal(ref.source,'model-reference');assert.equal(estimateCost('gpt-6-astra',n,'default',catalog,'my-gateway'),null);
+ catalog['my-gateway']={models:{'gpt-6-astra':{cost:{input:1,cache_read:0.1,cache_write:2,output:4}}}};
+ const own=estimateReferenceCost('gpt-6-astra',n,'default',catalog,'my-gateway');assert.equal(own.source,'provider');close(own.usd,0.00112);
+});
+test('reference prices support qualified/datetime models and refuse unknown or conflicting model matches',()=>{
+ const n=tokenCounts(tokens()),catalog={vendor:{models:{'sample-model':{cost:{input:2,output:10}}}}};
+ const ref=estimateReferenceCost('vendor/sample-model-2026-10-15',n,null,catalog,'my-gateway');close(ref.usd,0.003);assert.equal(ref.source,'model-reference');
+ assert.equal(estimateReferenceCost('unknown-model',n,null,catalog,'my-gateway'),null);
+ catalog.other={models:{'sample-model':{cost:{input:20,output:100}}}};
+ assert.equal(estimateReferenceCost('sample-model',n,null,catalog,'my-gateway'),null);
+});
+test('reference costs are summed per request and do not mint extra pet coins',()=>fixture(async(root,cacheDirectory)=>{
+ await logFile(root,'reference.jsonl',[meta('reference',now-100,{model_provider:'my-gateway'}),context(now-99,'gpt-6-astra'),meter(now-90,tokens())],now);
+ const catalog={openai:{models:{'gpt-6-astra':{cost:{input:2,cache_read:0.2,output:10}}}}};
+ const raw=await scanUsage({codexHome:root,cacheDirectory,now,catalog,pricingVersion:'reference-test'}),normalized=normalizeReport(raw,now),model=normalized.days.at(-1).models[0];
+ assert.equal(model.provider,'my-gateway');close(model.referenceUSD,0.003);assert.equal(model.usd,null);assert.equal(normalized.days.at(-1).knownUSD,0);
+ const state=initialState(now);observeUsage(state,normalized,now);assert.equal(availableReward(state,now),0);
+ const cached=await scanUsage({codexHome:root,cacheDirectory,now,catalog,pricingVersion:'reference-test'});assert.deepEqual(cached[0].daily,raw[0].daily);
+}));

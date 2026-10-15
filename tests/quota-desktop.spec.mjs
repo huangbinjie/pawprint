@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, appendFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { seedMatureCompanion } from "./fixtures/game.mjs";
-import { openHome } from "./helpers.mjs";
+import { openHome,openCodex } from "./helpers.mjs";
 test("owned badges are in pools and real native tray titles follow remaining quota snapshots", async ({}, info) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "pawprint-quota-ui-"));
   const profile = path.join(root, "profile"), codex = path.join(root, "codex");
@@ -25,7 +25,7 @@ test("owned badges are in pools and real native tray titles follow remaining quo
       const original = Tray.prototype.setTitle;
       Tray.prototype.setTitle = function(title, ...rest) { globalThis.pawObservedTitle = title; return original.call(this, title, ...rest); };
     });
-    await home.evaluate(() => window.pawprint.showHome("settings"));
+    await openCodex(app,'usage');
     const before = (await home.evaluate(() => window.pawprint.getState())).data;
     await home.getByRole("switch", { name: "图标旁显示剩余额度" }).click();
     await expect.poll(() => app.evaluate(() => globalThis.pawObservedTitle)).toBe("W 38%");

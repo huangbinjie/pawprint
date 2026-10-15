@@ -1,6 +1,6 @@
 {
   "name": "pawprint-desktop",
-  "version": "0.13.3",
+  "version": "0.14.0",
   "private": true,
   "repository": "https://github.com/huangbinjie/pawprint",
   "homepage": "https://huangbinjie.github.io/pawprint/",
@@ -97,7 +97,8 @@
     "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "selfsigned": "^5.5.0"
+    "selfsigned": "^5.5.0",
+    "smol-toml": "^1.9.1"
   },
   "devDependencies": {
     "@babel/parser": "^7.29.9",
