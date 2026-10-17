@@ -11,6 +11,8 @@ import { drawTalent, trainingCost } from "./talents.mjs";
 import { lanTransition } from "./multiplayer.mjs";
 import {
   randomGenome,
+  starterGenome,
+  STARTER_RULES,
   inheritGenome,
   PARTNERS,
   CATALOG_VERSION,
@@ -64,10 +66,10 @@ export function transition(current, command, { now, rng, id }) {
       state.freeEggClaimed = true;
       state.eggs.push({
         id: id(),
-        genome: randomGenome(rng),
+        genome: starterGenome(rng),
         talent: drawTalent(rng),
         skills: drawSkills(rng),
-        birthRules: CATALOG_VERSION,
+        birthRules: STARTER_RULES,
         createdAt: now,
         readyAt: now,
         parents: [],

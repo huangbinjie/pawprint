@@ -2,6 +2,15 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.15.0 — 2026-10-17
+
+- Preserve recognized file-based ChatGPT identity across Codex restarts while using custom Providers on macOS. A local inference bridge uses Provider keys from Keychain and strips ChatGPT credentials and identity headers before forwarding. Keep Pawprint running; restart Codex once after the first upgrade. The client Usage menu shows ChatGPT account limits, separately from third-party usage.
+- Request an immediate refresh of the local Provider indicator after verifying the written configuration. Delivery has no UI acknowledgement. Send silent system notifications for switch results and offer shortcuts to Pawprint's notification settings; no custom desktop overlay is shown.
+- Explain configuration conflicts by changed field and offer explicitly reviewed, backed-up restoration to ChatGPT. Refuse stale confirmations and changes that cannot be safely isolated; retain unrelated settings and login data.
+- Show recent recorded chat Providers and models independently of the new-chat default. Unknown sources remain unconfirmed; empty chats may not yet be recorded. Reading metadata sends no chat message and does not verify API connectivity.
+- Give newly claimed first eggs a fixed cream tabby appearance with random hidden genes, talents and skills. Existing pets/eggs and discovery/breeding rules are preserved; update gene-catalog probability descriptions.
+- Single-click pets the cat without opening a menu. Right-click opens the menu; double-click returns to a chat.
+
 ## 0.14.2 — 2026-10-15
 
 - Fix switching back to ChatGPT after choosing a different model in Codex. Normal model selections and equivalent configuration formatting no longer block connection switches; external provider or connection changes still require review.

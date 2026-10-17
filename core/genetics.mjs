@@ -1,6 +1,12 @@
 import { expandTraits } from "./genetics-extra.mjs";
 // Append-only allele IDs: never reorder existing entries or reroll an existing genome.
 export const CATALOG_VERSION = "founder-v4";
+export const STARTER_RULES = "starter-v1";
+// Stable welcome appearance. Allele IDs are append-only; no account/save data.
+export const STARTER_APPEARANCE = Object.freeze({
+  coat:0,pattern:1,eyes:0,eyeSize:1,ears:1,tail:1,white:1,
+  body:0,face:0,expression:0,fur:0,eyeSpacing:0,pupil:0,muzzle:0,nose:0,patternScale:0,
+});
 export const TRAITS = {
   coat: [
     { name: "奶油", weight: 8, color: "#E7CDA6", shade: "#B78860" },
@@ -231,6 +237,12 @@ export function randomGenome(rng) {
       ]),
     ),
   };
+}
+export function starterGenome(rng) {
+  const genome=randomGenome(rng);
+  // Keep random carried alleles for later breeding; only the expressed side is fixed.
+  for(const key of GENE_KEYS)genome[key][0]=STARTER_APPEARANCE[key]??0;
+  return genome;
 }
 // Existing allele indices retain their dominance. No rarity-based power score.
 export function phenotype(genome) {

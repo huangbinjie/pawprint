@@ -14,6 +14,7 @@ import {
   GENE_COUNT,
   geneOdds,
   formatChance,
+  STARTER_APPEARANCE,
 } from "../core/genetics.mjs";
 
 async function seedChineseEmpty(directory) {
@@ -303,6 +304,9 @@ test("free first companion, new prices, juvenile gate and reversible garden plac
     await home.getByRole("button", { name: "迎接小家伙", exact: true }).click();
     await home.getByLabel("它的名字").fill("布丁");
     await home.getByRole("button", { name: "一起回小屋" }).click();
+    const firstCat=home.locator('svg.cat[data-phenotype]').first();
+    await expect(firstCat).toBeVisible();expect(JSON.parse(await firstCat.getAttribute('data-phenotype'))).toEqual(STARTER_APPEARANCE);
+    await home.screenshot({path:testInfo.outputPath('fixed-first-companion.png')});
     await expect(
       home.getByRole("button", { name: "领养探索蛋 240" }),
     ).toBeDisabled();

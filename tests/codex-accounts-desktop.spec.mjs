@@ -1,24 +1,43 @@
 import {test, expect, _electron as electron} from '@playwright/test';
 import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import os from 'node:os';import path from 'node:path';
+import net from 'node:net';
 import {openHome,openCodex} from './helpers.mjs';
 import {parse} from 'smol-toml';
 import {seedMatureCompanion} from './fixtures/game.mjs';
+import {CodexAccounts} from '../electron/codex-accounts.mjs';
 
 test('native pet menu and independent Codex Provider form preserve current login',async({},testInfo)=>{
   const root=await mkdtemp(path.join(os.tmpdir(),'paw-account-desktop-')),codexHome=path.join(root,'codex');await mkdir(codexHome);
+  await mkdir(path.join(codexHome,'ipc'));const refreshMessages=[],refreshSockets=new Set();
+  const refreshServer=net.createServer(socket=>{
+    refreshSockets.add(socket);socket.on('error',()=>{});socket.on('close',()=>refreshSockets.delete(socket));let data=Buffer.alloc(0);
+    socket.on('data',bytes=>{data=Buffer.concat([data,bytes]);while(data.length>=4){const length=data.readUInt32LE(0);if(data.length<length+4)return;const m=JSON.parse(data.subarray(4,length+4));data=data.subarray(length+4);
+      if(m.method==='initialize'){const reply=Buffer.from(JSON.stringify({type:'response',method:'initialize',requestId:m.requestId,resultType:'success',result:{clientId:'desktop-refresh-test'}})),header=Buffer.alloc(4);header.writeUInt32LE(reply.length);socket.write(Buffer.concat([header,reply]));}
+      else refreshMessages.push(m);
+    }});
+  });
+  await new Promise(resolve=>refreshServer.listen(path.join(codexHome,'ipc','ipc.sock'),resolve));
   const config='model = "gpt-existing"\napproval_policy = "on-request"\n';await writeFile(path.join(codexHome,'config.toml'),config);await writeFile(path.join(codexHome,'auth.json'),'unchanged-test-login');
   await seedMatureCompanion(path.join(root,'paw'));
   const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:path.join(root,'paw'),PAWPRINT_TEST_CODEX_HOME:codexHome}});
   let providerId;
   try {
-    await app.evaluate(({Menu})=>{
+    await app.evaluate(({Menu,Notification,shell})=>{
       const original=Menu.buildFromTemplate.bind(Menu);globalThis.accountTestMenus=[];
       Menu.buildFromTemplate=template=>{const menu=original(template);globalThis.accountTestMenus.push({template,menu});return menu;};
+      const popup=Menu.prototype.popup;globalThis.petPopupCount=0;Menu.prototype.popup=function(...args){globalThis.petPopupCount++;return popup.apply(this,args);};
+      globalThis.accountSwitchNotices=[];Notification.isSupported=()=>true;
+      Notification.prototype.show=function(){globalThis.accountSwitchNotices.push({title:this.title,body:this.body,silent:this.silent});};
+      globalThis.accountNotificationSettings=[];shell.openExternal=async url=>{globalThis.accountNotificationSettings.push(url);};
     });
     const home=await openCodex(app);const errors=[];home.on('pageerror',e=>errors.push(e.message));
     const panel=home.locator('.codex-accounts');await expect(panel.getByRole('heading',{name:'连接与 Provider'})).toBeVisible();
     await expect(panel.locator('.codex-current')).toContainText('ChatGPT / OpenAI · gpt-existing');
+    await expect(panel.getByText('切换结果已默认发送系统通知。未弹出时，请为 Pawprint 开启通知并选择横幅。',{exact:true})).toBeVisible();
+    await panel.getByRole('button',{name:'打开通知设置',exact:true}).click();
+    expect(await app.evaluate(()=>globalThis.accountNotificationSettings)).toEqual(['x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=studio.binmax.pawprint']);
+    expect(await readFile(path.join(codexHome,'config.toml'),'utf8')).toBe(config);
     await home.locator('.codex-tabs').getByRole('button',{name:'会话与提醒',exact:true}).click();
     const titleToggle=home.getByRole('switch',{name:'Provider 标题标注',exact:true});
     await expect(titleToggle).toHaveAttribute('aria-checked','true');
@@ -33,7 +52,12 @@ test('native pet menu and independent Codex Provider form preserve current login
     await expect(modal).not.toBeVisible();
     await home.screenshot({path:testInfo.outputPath('codex-account-settings.png')});
     const floating=app.windows().find(w=>w.url().endsWith('#floating'));
+    const beforeClick=await app.evaluate(()=>globalThis.petPopupCount);
     await floating.locator('.float-cat-button').click();
+    // Wait past the former 500 ms single-click menu delay.
+    await floating.waitForTimeout(700);expect(await app.evaluate(()=>globalThis.petPopupCount)).toBe(beforeClick);
+    await floating.locator('.float-cat-button').click({button:'right'});
+    await expect.poll(()=>app.evaluate(()=>globalThis.petPopupCount)).toBe(beforeClick+1);
     await expect.poll(()=>app.evaluate(()=>globalThis.accountTestMenus.some(({template})=>template.some(i=>i.label==='Codex 账号与 Provider')))).toBe(true);
     await app.evaluate(()=>{
       const entry=globalThis.accountTestMenus.find(({template})=>template.some(i=>i.label==='Codex 账号与 Provider'));entry.menu.closePopup();entry.menu.items.find(i=>i.label==='Codex 账号与 Provider').click();
@@ -43,17 +67,35 @@ test('native pet menu and independent Codex Provider form preserve current login
       const entry=globalThis.accountTestMenus.find(({template})=>template.some(i=>i.label==='Desktop test provider · test-model'));entry.menu.closePopup();return entry.menu.items.map(i=>({label:i.label,checked:i.checked,enabled:i.enabled}));
     });
     expect(native.find(i=>i.label==='当前 ChatGPT / OpenAI 登录').checked).toBe(true);
+    await app.evaluate(()=>{const entry=globalThis.accountTestMenus.find(({template})=>template.some(i=>i.label==='Desktop test provider · test-model'));entry.menu.items.find(i=>i.label==='切换通知未显示？打开通知设置').click();});
+    await expect.poll(()=>app.evaluate(()=>globalThis.accountNotificationSettings.length)).toBe(2);
     const status=(await home.evaluate(()=>window.pawprint.codexAccounts('status'))).data;
     expect(native.find(i=>i.label==='Desktop test provider · test-model').enabled).toBe(status.supported);
     const dock=app.windows().find(w=>w.url().endsWith('#petcontrols'));
     if(dock)expect((await dock.evaluate(()=>window.pawprint.codexAccounts('status'))).ok).toBe(false);
     await panel.getByRole('button',{name:'选用 Desktop test provider',exact:true}).click();
     await expect(panel.locator('.codex-current')).toContainText('Desktop test provider · test-model');
+    await expect(panel.getByRole('status')).toContainText('已请求客户端刷新左下角');
+    await expect.poll(()=>refreshMessages.length).toBe(1);
+    expect(refreshMessages[0].params.queryKey).toEqual(['user-saved-config','local',null]);
+    expect(await app.evaluate(()=>globalThis.accountSwitchNotices)).toEqual([{title:'Codex 默认连接已切换',body:'已选用：Desktop test provider\n已请求刷新客户端标识；已有会话保持原连接。',silent:true}]);
+    expect(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().some(w=>w.getTitle()==='Pawprint Connection Notice'))).toBe(false);
+    // Unsupported system notifications do not create a custom overlay or block switching.
+    await app.evaluate(({Notification})=>{
+      Notification.isSupported=()=>false;
+      const entry=globalThis.accountTestMenus.find(({template})=>template.some(i=>i.label==='Desktop test provider · test-model'));entry.menu.items.find(i=>i.label==='Desktop test provider · test-model').click();
+    });
+    await expect.poll(()=>refreshMessages.length).toBe(2);
+    expect(await app.evaluate(()=>globalThis.accountSwitchNotices.length)).toBe(1);
+    expect(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().some(w=>w.getTitle()==='Pawprint Connection Notice'))).toBe(false);
+    await app.evaluate(({Notification})=>{Notification.isSupported=()=>true;});
     expect(parse(await readFile(path.join(codexHome,'config.toml'),'utf8')).model_provider).toBe(providerId);
     // The client's model picker can change the model while keeping the provider.
     await writeFile(path.join(codexHome,'config.toml'),(await readFile(path.join(codexHome,'config.toml'),'utf8')).replace('model = "test-model"','model = "picked-model"'));
     await panel.getByRole('button',{name:'选用 ChatGPT',exact:true}).click();
     await expect(panel.locator('.codex-provider').first().getByRole('status')).toContainText('默认连接已切换');
+    await expect(panel.locator('.codex-provider').first().getByRole('status')).toContainText('界面更新尚未确认');
+    expect((await app.evaluate(()=>globalThis.accountSwitchNotices.at(-1))).body).toContain('已选用：ChatGPT / OpenAI');
     await expect(panel.locator('.codex-current')).toContainText('ChatGPT / OpenAI · gpt-existing');
     await panel.getByRole('button',{name:'选用 Desktop test provider',exact:true}).click();
     await expect(panel.locator('.codex-current')).toContainText('Desktop test provider · test-model');
@@ -62,7 +104,20 @@ test('native pet menu and independent Codex Provider form preserve current login
     await panel.getByRole('button',{name:'选用 ChatGPT',exact:true}).click();
     await expect(panel.locator('.codex-provider').first().getByRole('alert')).toBeVisible();
     await expect(panel.locator('.codex-provider').first().getByRole('alert')).toContainText('连接配置已被外部修改');
-    await writeFile(path.join(codexHome,'config.toml'),beforeConflict);
+    expect((await app.evaluate(()=>globalThis.accountSwitchNotices.at(-1))).title).toBe('Codex 连接切换失败');
+    const conflictPanel=panel.locator('.codex-conflict');await expect(conflictPanel).toContainText('Base URL');await expect(conflictPanel).not.toContainText('https://changed.example/v1');
+    await conflictPanel.getByRole('button',{name:'处理配置冲突',exact:true}).click();
+    await conflictPanel.getByRole('button',{name:'取消恢复',exact:true}).click();expect(await readFile(path.join(codexHome,'config.toml'),'utf8')).toBe(beforeConflict.replace('https://example.com/v1','https://changed.example/v1'));
+    await conflictPanel.getByRole('button',{name:'处理配置冲突',exact:true}).click();await conflictPanel.getByRole('button',{name:'备份并恢复 ChatGPT',exact:true}).click();
+    await expect(conflictPanel).toHaveCount(0);await expect(panel.locator('.codex-current')).toContainText('ChatGPT / OpenAI · gpt-existing');
+    const recovered=(await home.evaluate(()=>window.pawprint.codexAccounts('status'))).data;expect(await readFile(recovered.backupPath,'utf8')).toContain('https://changed.example/v1');
+    await panel.getByRole('button',{name:'选用 Desktop test provider',exact:true}).click();await expect(panel.locator('.codex-current')).toContainText('Desktop test provider · test-model');
+
+    for(const socket of refreshSockets)socket.destroy();await new Promise(resolve=>refreshServer.close(resolve));
+    await panel.getByRole('button',{name:'选用 Desktop test provider',exact:true}).click();
+    await expect(panel.getByRole('status')).toContainText('无法通知客户端刷新左下角');
+    const notice=await app.evaluate(()=>globalThis.accountSwitchNotices.at(-1));expect(notice.title).toBe('Codex 默认连接已切换');expect(notice.body).toContain('客户端标识刷新未确认');
+    await expect(panel.locator('.codex-current')).toContainText('Desktop test provider · test-model');
 
     await expect(panel.getByRole('button',{name:'删除 Desktop test provider',exact:true})).toBeEnabled();
     await panel.getByRole('button',{name:'删除 Desktop test provider',exact:true}).click();
@@ -75,6 +130,7 @@ test('native pet menu and independent Codex Provider form preserve current login
     await expect(panel.locator('.codex-current')).toContainText('ChatGPT / OpenAI · gpt-existing');
     const restored=parse(await readFile(path.join(codexHome,'config.toml'),'utf8'));delete restored.model_providers;expect(restored).toEqual(parse(config));expect(await readFile(path.join(codexHome,'auth.json'),'utf8')).toBe('unchanged-test-login');expect(errors).toEqual([]);
   } finally {
+    for(const socket of refreshSockets)socket.destroy();if(refreshServer.listening)await new Promise(resolve=>refreshServer.close(resolve));
     if(providerId){const {MacKeychain}=await import('../electron/codex-accounts.mjs');await new MacKeychain().remove(providerId);}
     await app.close();await rm(root,{recursive:true,force:true});
   }
@@ -86,11 +142,16 @@ test('Codex hub groups provider tokens, keeps unknown prices explicit and hides 
  state.usage.report={days:[{date:(await import('../core/economy.mjs')).dayKey(Date.now()),tokens:3100,usd:null,knownUSD:0.01,unpriced:2,models:[{provider:'openai',name:'same-model',tokens:1000,inputTokens:800,cachedTokens:200,outputTokens:200,knownUSD:0.01,usd:0.01,unpriced:0},{provider:'custom-demo',name:'same-model',tokens:2000,inputTokens:1500,cachedTokens:500,outputTokens:500,knownUSD:0,usd:null,unpriced:1,referenceUSD:0.02,referenceKnownUSD:0.02,referenceUnpriced:0,usesModelReference:true},{provider:'unknown-test',name:'unmatched-model',tokens:100,inputTokens:80,cachedTokens:0,outputTokens:20,knownUSD:0,usd:null,unpriced:1}]}],updatedAt:new Date().toISOString(),complete:true,fresh:true,unpriced:1};
  const {Store}=await import('../core/store.mjs');const store=new Store(profile);await store.load();await store.save(state);
  await writeFile(path.join(codex,'config.toml'),'model="test-model"\n');await writeFile(path.join(profile,'codex-accounts.json'),JSON.stringify({providers:[{id:'custom-demo',name:'示例连接',model:'same-model',baseUrl:'https://api.example.com/v1'}]}));
+ await writeFile(path.join(profile,'codex-provider-titles.json'),JSON.stringify({enabled:false,edits:{}}));
+ const {DatabaseSync}=await import('node:sqlite');const db=new DatabaseSync(path.join(codex,'state_5.sqlite'));db.exec('CREATE TABLE threads(id TEXT PRIMARY KEY,name TEXT,cwd TEXT,model_provider TEXT,model TEXT,updated_at INTEGER,source TEXT,archived INTEGER,title TEXT)');
+ for(const [n,name,provider] of [[1,'Official recorded chat','openai'],[2,'Custom recorded chat','custom-demo'],[3,'Unknown recorded chat',null]])db.prepare('INSERT INTO threads VALUES(?,?,?,?,?,?,?,?,?)').run(`01a0f1ea-4534-7651-b950-${String(n).padStart(12,'0')}`,name,'/PRIVATE_PATH',provider,'same-model',n,'cli',0,'PRIVATE_PROMPT');db.close();
  const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:profile,PAWPRINT_TEST_CODEX_HOME:codex}});
  try{
   const home=await openCodex(app);await expect(home.getByRole('heading',{name:'Codex 助手',exact:true})).toBeVisible();
   await expect(home.getByLabel('API Key',{exact:true})).not.toBeVisible();
   await expect(home.getByText(path.join(codex,'config.toml'),{exact:true})).not.toBeVisible();
+  const sources=home.locator('.codex-session-sources');await sources.locator('summary').click();await expect(sources.locator('li')).toHaveCount(3);
+  await expect(sources.locator('li').filter({hasText:'Custom recorded chat'})).toContainText('示例连接');await expect(sources.locator('li').filter({hasText:'Official recorded chat'})).toContainText('ChatGPT / OpenAI');await expect(sources.locator('li').filter({hasText:'Unknown recorded chat'})).toContainText('来源未确认');await expect(sources).not.toContainText('PRIVATE');
   await home.locator('.codex-tabs').getByRole('button',{name:'会话与提醒',exact:true}).click();await expect(home.getByText('例如：[我的 API] 项目讨论',{exact:true})).toBeVisible();
   await home.locator('.codex-tabs').getByRole('button',{name:'用量与额度',exact:true}).click();
   const rows=home.locator('.codex-usage-grid article');await expect(rows).toHaveCount(3);
@@ -106,4 +167,19 @@ test('Codex hub groups provider tokens, keeps unknown prices explicit and hides 
   await home.locator('.codex-tabs').getByRole('button',{name:'高级设置',exact:true}).click();await expect(home.getByText(path.join(codex,'config.toml'),{exact:true})).not.toBeVisible();
   await home.getByText('查看本机路径',{exact:true}).first().click();await expect(home.getByText(path.join(codex,'config.toml'),{exact:true})).toBeVisible();
  }finally{await app.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('startup upgrades tracked connections to preserve ChatGPT identity and reuses the bridge after restart',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'paw-identity-desktop-')),directory=path.join(root,'codex'),profile=path.join(root,'paw');await mkdir(directory);await seedMatureCompanion(profile);
+ await writeFile(path.join(directory,'config.toml'),'model="gpt-existing"\n');
+ const keychain={set:async()=>{},get:async()=> 'dummy',remove:async()=>{}},manager=new CodexAccounts({directory,dataDirectory:profile,keychain,running:async()=>false});await manager.load();const added=await manager.add({name:'Identity test provider',baseUrl:'https://example.com/v1',model:'test-model',apiKey:'dummy'});await manager.switch(added.providers[0].id);await manager.switch('openai');
+ const login=JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:'DUMMY_ACCESS',id_token:'DUMMY_ID'}});await writeFile(path.join(directory,'auth.json'),login);
+ const env={...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:profile,PAWPRINT_TEST_CODEX_HOME:directory};let app;
+ try{
+  app=await electron.launch({args:['.'],env});let home=await openCodex(app);await expect(home.getByText('保留 ChatGPT 账号身份',{exact:true})).toBeVisible();await expect(home.getByText('客户端“使用情况”显示 ChatGPT 账号额度；第三方用量请在“用量与额度”中按 Provider 查看。',{exact:true})).toBeVisible();
+  const config=await readFile(path.join(directory,'config.toml'),'utf8'),provider=parse(config).model_providers[added.providers[0].id];expect(provider.requires_openai_auth).toBe(true);expect(provider.auth).toBeUndefined();expect(provider.base_url).toMatch(/^http:\/\/127\.0\.0\.1:/);expect(await readFile(path.join(directory,'auth.json'),'utf8')).toBe(login);
+  const response=await fetch(provider.base_url+'/not-an-api');expect(response.status).toBe(404);await response.text();
+  await app.close();app=await electron.launch({args:['.'],env});home=await openCodex(app);await expect(home.getByText('保留 ChatGPT 账号身份',{exact:true})).toBeVisible();expect(await readFile(path.join(directory,'config.toml'),'utf8')).toBe(config);expect(await readFile(path.join(directory,'auth.json'),'utf8')).toBe(login);
+  const restarted=await fetch(provider.base_url+'/not-an-api');expect(restarted.status).toBe(404);await restarted.text();
+ }finally{await app?.close();await rm(root,{recursive:true,force:true});}
 });

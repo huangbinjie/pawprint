@@ -1,5 +1,8 @@
 import {CodexProviderTitles} from "./codex-provider-titles.mjs";
-import {CodexAccounts} from "./codex-accounts.mjs";
+import {CodexAccounts,MacKeychain} from "./codex-accounts.mjs";
+import {CodexIdentityBridge} from './codex-identity-bridge.mjs';
+import {refreshCodexProviderIndicator} from './codex-client-refresh.mjs';
+import {readCodexSessionSources} from './codex-session-sources.mjs';
 import {ApprovalObserver} from './approval-observer.mjs';
 import {AttentionBridge,validAttentionEvent} from './attention.mjs';
 import {hooksSettingsScript} from './client-settings.mjs';
@@ -69,7 +72,7 @@ app.setPath(
     : path.join(app.getPath("appData"), "Pawprint"),
 );
 let attentionBridge,approvalObserver,attentionBubbleEvent;
-let codexAccounts, codexAccountsPromise, providerTitles;
+let codexAccounts, codexAccountsPromise, providerTitles,identityBridge;
 let codexProviderNames = {};
 let petControls,setupGuideWindow,setupGuideValue;
 let petControlsRevealed=false,petControlsHideTimer;
@@ -412,17 +415,39 @@ async function getCodexAccounts() {
   // Account settings use the actual Codex home, never the usage-import directory.
   const directory = managedCodexHome();
   if (!codexAccountsPromise) codexAccountsPromise = (async () => {
-    const manager = new CodexAccounts({directory, dataDirectory: app.getPath('userData')});
-    await manager.load(); codexAccounts = manager; return manager;
+    const keychain=new MacKeychain();
+    identityBridge=process.platform==='darwin'?new CodexIdentityBridge({dataDirectory:app.getPath('userData'),keychain}):null;
+    const manager = new CodexAccounts({directory, dataDirectory: app.getPath('userData'),keychain,identityBridge,refreshClient:refreshCodexProviderIndicator});
+    await manager.load();codexAccounts=manager;
+    try{await manager.prepareIdentityConnection();}catch(e){manager.identityError=e.message;}
+    return manager;
   })().catch(error => { codexAccountsPromise = null; throw error; });
   return codexAccountsPromise;
 }
+function notifyCodexSwitch(result) {
+  const confirmed=!!result&&result.clientRefresh?.configurationVerified!==false;
+  const name=result?.selected==='openai'?'ChatGPT / OpenAI':result?.providers?.find(p=>p.id===result.selected)?.name||tr('自定义 Provider');
+  const title=tr(confirmed?'Codex 默认连接已切换':'Codex 连接切换失败');
+  try {
+    if(!Notification.isSupported())return;
+    const body=confirmed
+      ? `${formatText('已选用：{0}',[name],language())}\n${tr(result.clientRefresh?.status==='requested'?'已请求刷新客户端标识；已有会话保持原连接。':'客户端标识刷新未确认；已有会话保持原连接。')}`
+      : tr('切换未完成，请在 Pawprint 中查看原因。');
+    const notice=new Notification({title,body,silent:true});
+    notice.on('click',()=>createHome('codex'));notice.show();
+  }catch { /* OS notification failures must not change the switch outcome. */ }
+}
+async function switchCodexAccount(manager,id,options) {
+  try {const result=await manager.switch(id,options);notifyCodexSwitch(result);return result;}
+  catch(error){notifyCodexSwitch();throw error;}
+}
+async function openConnectionNotificationSettings() {
+  if(process.platform!=='darwin')throw new Error('当前仅支持 macOS。');
+  await shell.openExternal('x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=studio.binmax.pawprint');
+}
 async function showCodexAccountsMenu() {
   const manager = await getCodexAccounts(), status = await manager.status();
-  const choose = id => menuAction(async () => {
-    await manager.switch(id);
-    await dialog.showMessageBox({type:'info', message:'Codex 默认配置已更新', detail:'无需退出 Codex。请新建会话并确认 Provider 与模型；客户端界面可能仍保留原选择。已有会话不会自动切换，ChatGPT 登录未被修改。'});
-  });
+  const choose = id => menuAction(()=>switchCodexAccount(manager,id));
   buildMenu([
     {label:'Codex Account Manager', enabled:false},
     {label:'当前 ChatGPT / OpenAI 登录', type:'checkbox', checked:status.selected==='openai', enabled:status.supported, click:()=>choose('openai')},
@@ -430,6 +455,7 @@ async function showCodexAccountsMenu() {
     {type:'separator'},
     {label:'无需退出；新建会话后确认 Provider 与模型', enabled:false},
     {label:'添加 / 管理 Provider…', click:()=>createHome('codex')},
+    {label:'切换通知未显示？打开通知设置', enabled:status.supported, click:()=>menuAction(openConnectionNotificationSettings)},
   ]).popup({window:floating});
 }
 
@@ -1151,14 +1177,15 @@ else {
         const manager = await getCodexAccounts(); let result;
         if (action === 'status') result = await manager.status();
         else if (action === 'add') result = await manager.add(input);
-        else if (action === 'switch') result = await manager.switch(input?.id);
+        else if (action === 'switch') result = await switchCodexAccount(manager,input?.id,{reviewId:input?.reviewId});
+        else if (action === 'notification-settings') {await openConnectionNotificationSettings();result=await manager.status();}
         else if (action === 'remove') result = await manager.remove(input?.id);
         else if (action === 'title-labels') { await providerTitles.configure(input?.enabled); result = await manager.status(); }
         else if (action === 'title-labels-refresh') { await providerTitles.refresh(); result = await manager.status(); }
         else throw new Error('无效的账号操作。');
         codexProviderNames=result.providerNames||{};
         broadcast();
-        return {...result, titleLabels:providerTitles?.snapshot()};
+        return {...result, titleLabels:providerTitles?.snapshot(),sessions:await readCodexSessionSources(managedCodexHome())};
       });
       register("paw:state", () => snapshot());
       register("paw:update-check", () => updates.check());
@@ -1459,6 +1486,7 @@ else {
         ...(process.platform!=='darwin'?{readCandidates:async()=>[]}:{}),
       });
       await providerTitles.load(); providerTitles.start();
+      if(process.platform==='darwin')void getCodexAccounts().catch(()=>{});
       const clientDirectory=store.state.settings.codexHome || (test&&process.env.PAWPRINT_TEST_CODEX_HOME) || defaultCodexHome();
       attentionBridge=new AttentionBridge({dataDirectory:app.getPath('userData'),directory:clientDirectory,execPath:process.execPath,relayPath:path.join(here,'attention-hook.cjs'),onEvents:receiveAttention,onChange:()=>{if(!quitting)broadcast();}});
       // Persisted Hook approvals have no proof of a pending human request.
@@ -1553,7 +1581,7 @@ else {
       event.preventDefault();
       void rememberPosition();
       quitting = true;
-      void Promise.all([providerTitles?.close(), workTitlesPending, queue, attentionBridge?.close(), approvalObserver?.close(), lan?.close(), activity?.close(), quota?.close()]).finally(() => app.quit());
+      void Promise.all([identityBridge?.close(),providerTitles?.close(), workTitlesPending, queue, attentionBridge?.close(), approvalObserver?.close(), lan?.close(), activity?.close(), quota?.close()]).finally(() => app.quit());
     }
   });
 }

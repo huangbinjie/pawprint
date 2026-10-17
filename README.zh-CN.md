@@ -4,7 +4,7 @@
 
 **一点桌面陪伴，也帮你回到对的 Codex 会话。**
 
-[下载 v0.14.2](https://github.com/huangbinjie/pawprint/releases/tag/v0.14.2) · [官网](https://huangbinjie.github.io/pawprint/zh/) · [English](README.md)
+[下载 v0.15.0](https://github.com/huangbinjie/pawprint/releases/tag/v0.15.0) · [官网](https://huangbinjie.github.io/pawprint/zh/) · [English](README.md)
 
 爪印是一款独立开发的桌面伙伴，支持 Windows x64 和 Apple 芯片 Mac。猫咪随本机 Codex 活动成长，身边留着几个实用的工作入口。宠物、提醒和小游戏无需 API key，不额外发起模型请求。
 
@@ -44,9 +44,17 @@
 
 新安装默认 **English**，开启本地用量、额度、会话联动、大致主题和安静提醒。首次加载最近会话，不补播历史回复；升级保留已有语言、提醒方式和主动关闭的选项。
 
-在小屋领养第一枚蛋，再双击猫咪返回会话。右键菜单可以打开小屋。
+新领取的初遇蛋固定为奶油虎斑外观，隐藏基因、天赋与技能仍随机；已有猫咪和蛋保持不变。单击只摸猫，双击返回会话，右键打开菜单。
 
 审批牌只跟随兼容桌面客户端 IPC 中待处理的人工请求，自动审核不举牌。内部 IPC 协议可能随客户端升级变化；订阅不可用时不显示审批牌。macOS 会准备 6 条提问与清理 Hook，请在客户端 **审核并信任“Pawprint ·”规则** 以同步提问状态；其他规则保留并备份，旧的 Pawprint 审批 Hook 会移除。受支持的本地结构化提问记录也能提供提醒，无需 Hook 信任。原生 Hook 设置目前仅支持 macOS；返回会话需要兼容的 Codex 桌面客户端。
+
+## Codex 助手
+
+macOS 上可管理自定义 Responses API 连接，密钥保存在 Keychain。已识别的文件形式 ChatGPT 登录可在切换 Provider、重启客户端后保留账号身份；使用此模式时需保持 Pawprint 运行，首次升级后重启一次客户端。
+
+切换时核对配置并请求刷新标识，结果通过系统通知提示。可查看最近会话记录的来源，并在确认后备份、恢复配置冲突。已有会话与远端会话不会自动改用新默认连接；客户端“使用情况”是 ChatGPT 账号额度，第三方用量另按 Provider 查看。
+
+详见 [功能与限制](docs/codex-account-manager.md)。
 
 ## 用量留在手边
 
@@ -56,9 +64,9 @@
 
 ## 安装
 
-- [Windows 10/11 x64 安装包](https://github.com/huangbinjie/pawprint/releases/download/v0.14.2/Pawprint-0.14.2-win-x64-setup.exe)
-- [Apple 芯片 Mac 压缩包](https://github.com/huangbinjie/pawprint/releases/download/v0.14.2/Pawprint-0.14.2-mac-arm64.zip)
-- [更新说明与 SHA-256 文件](https://github.com/huangbinjie/pawprint/releases/tag/v0.14.2)
+- [Windows 10/11 x64 安装包](https://github.com/huangbinjie/pawprint/releases/download/v0.15.0/Pawprint-0.15.0-win-x64-setup.exe)
+- [Apple 芯片 Mac 压缩包](https://github.com/huangbinjie/pawprint/releases/download/v0.15.0/Pawprint-0.15.0-mac-arm64.zip)
+- [更新说明与 SHA-256 文件](https://github.com/huangbinjie/pawprint/releases/tag/v0.15.0)
 
 请核对附带的校验文件。Windows 内测包未签名，运行安装程序并保留已有数据。Mac 内测包有完整的临时封装签名，但未使用 Developer ID 和苹果公证。把 Pawprint 放入 Applications；若提示无法验证开发者，点“完成”，到「系统设置 → 隐私与安全性」选择“仍要打开”。若提示已损坏，请停止并反馈该版本。详见 [Mac 签名与安装](docs/RELEASE_SIGNING.md)及 [Windows 支持](docs/WINDOWS.md)。
 

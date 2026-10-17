@@ -4,7 +4,7 @@
 
 **A little desktop cat. A better way back to your Codex work.**
 
-[Download v0.14.2](https://github.com/huangbinjie/pawprint/releases/tag/v0.14.2) · [Website](https://huangbinjie.github.io/pawprint/) · [Chinese](README.zh-CN.md)
+[Download v0.15.0](https://github.com/huangbinjie/pawprint/releases/tag/v0.15.0) · [Website](https://huangbinjie.github.io/pawprint/) · [Chinese](README.zh-CN.md)
 
 Pawprint is an independent desktop companion for Windows x64 and Apple silicon Macs. It keeps useful work shortcuts beside a cat that grows with your local Codex activity. No API key or extra model requests are needed for the pet, reminders or games.
 
@@ -36,7 +36,7 @@ A reply ending is treated as a reply ending. Running or uncertain parallel tasks
 
 New installs start in **English** with local usage, quota, session feedback, broad topic labels and quiet reminders enabled. Recent chat metadata loads immediately, without replaying old reply events. Your existing language, reminder choice and explicit opt-outs are preserved on upgrade.
 
-Adopt your first egg in the home, then double-click your cat to return to work. The right-click menu opens your home.
+New first eggs hatch into a cream tabby with random hidden genes, talents and skills. Existing pets and eggs stay unchanged. Single-click pets the cat, double-click returns to work, and right-click opens the menu.
 
 Manual approval signs follow pending requests from compatible desktop IPC; automatic review does not trigger a sign. The internal IPC protocol may change with client updates; when unavailable, approval signs are suppressed. On macOS, Pawprint prepares six clearly labeled question and cleanup hooks. **Review and trust the “Pawprint ·” rows in your client** for question updates. Existing rules are preserved and backed up; obsolete Pawprint approval hooks are removed. Structured local questions also provide reminders without hook trust. Native hook setup is currently macOS-only; chat return requires a compatible Codex desktop client.
 
@@ -48,7 +48,7 @@ The price catalog comes from [models.dev](https://models.dev/), refreshes automa
 
 ## Codex Assistant
 
-Manage connections, chat helpers, usage and advanced settings in one page. On **macOS**, add a custom Responses-compatible API provider with its key stored in Keychain, then change the default connection without quitting Codex. Configuration changes are backed up and preserve your ChatGPT sign-in. Existing chats retain their provider; remote chats may not use local defaults.
+Manage connections, chat helpers, usage and advanced settings in one page. On **macOS**, add a custom Responses-compatible API provider with its key stored in Keychain, then change the default connection without quitting Codex. Configuration changes are backed up. Recognized file-based ChatGPT identities stay available across client restarts through a local inference bridge; keep Pawprint running and restart Codex once after the first upgrade. Existing chats retain their provider; remote chats may not use local defaults.
 
 Verified local third-party chat titles can carry a provider prefix. Usage shows saved provider names, tokens and model-based reference costs; unmatched models stay unpriced. Reference costs are not your provider's bill or balance. Local paths are collapsed and public examples use generic data.
 
@@ -56,9 +56,9 @@ See [Codex Account Manager details and limits](docs/codex-account-manager.md).
 
 ## Install
 
-- [Windows 10/11 x64 installer](https://github.com/huangbinjie/pawprint/releases/download/v0.14.2/Pawprint-0.14.2-win-x64-setup.exe)
-- [Apple silicon Mac archive](https://github.com/huangbinjie/pawprint/releases/download/v0.14.2/Pawprint-0.14.2-mac-arm64.zip)
-- [Release notes and SHA-256 files](https://github.com/huangbinjie/pawprint/releases/tag/v0.14.2)
+- [Windows 10/11 x64 installer](https://github.com/huangbinjie/pawprint/releases/download/v0.15.0/Pawprint-0.15.0-win-x64-setup.exe)
+- [Apple silicon Mac archive](https://github.com/huangbinjie/pawprint/releases/download/v0.15.0/Pawprint-0.15.0-mac-arm64.zip)
+- [Release notes and SHA-256 files](https://github.com/huangbinjie/pawprint/releases/tag/v0.15.0)
 
 Verify the accompanying checksum. Windows beta builds are unsigned; run the installer and retain your existing app data. Mac beta builds have a complete ad-hoc bundle signature but are not Developer ID signed or notarized. Move Pawprint to Applications. If macOS cannot verify the developer, choose Done, then **System Settings → Privacy & Security → Open Anyway**. If macOS says damaged, stop and report that build. See [Mac signing and installation](docs/RELEASE_SIGNING.md) and [Windows support](docs/WINDOWS.md).
 

@@ -6,6 +6,8 @@ import {
   GENE_COUNT,
   LEGACY_KEYS,
   randomGenome,
+  starterGenome,
+  STARTER_RULES,
   phenotype,
   geneOdds,
   rarityFor,
@@ -13,6 +15,27 @@ import {
   withDefaults,
 } from "../core/genetics.mjs";
 import { initialState, transition } from "../core/game.mjs";
+
+test('new first companions match the approved legacy cream tabby look across random draws',()=>{
+ const reference=withDefaults({coat:[3,0],pattern:[1,3],eyes:[0,2],eyeSize:[1,2],ears:[2,1],tail:[1,2],white:[1,1]});
+ const hidden=new Set();
+ for(let seed=1;seed<=32;seed++){
+  let random=seed,sequence=0;const rng=max=>{random=(Math.imul(random,1664525)+1013904223)>>>0;return random%max;};
+  const options={now:1000,rng,id:()=>`starter-${seed}-${++sequence}`};
+  let s=transition(initialState(1000),{type:'free-egg'},options);assert.equal(s.eggs[0].birthRules,STARTER_RULES);
+  assert.deepEqual(phenotype(s.eggs[0].genome),phenotype(reference));hidden.add(JSON.stringify(GENE_KEYS.map(k=>s.eggs[0].genome[k][1])));
+  s=transition(s,{type:'hatch',eggId:s.eggs[0].id},options);assert.deepEqual(phenotype(s.pets[0].genome),phenotype(reference));
+ }
+ assert.ok(hidden.size>1);
+});
+test('starter appearances do not share mutable DNA or replace discovery eggs or existing eggs',()=>{
+ const a=starterGenome(()=>0),b=starterGenome(()=>0);a.pattern[0]=7;assert.equal(phenotype(b).pattern,1);
+ let sequence=0;const options={now:1000,rng:()=>0,id:()=>`egg-${++sequence}`};
+ let state=transition(initialState(1000),{type:'free-egg'},options);state.balance=1000;
+ state=transition(state,{type:'buy-egg'},options);assert.deepEqual(state.eggs[1].genome,randomGenome(()=>0));assert.notDeepEqual(phenotype(state.eggs[1].genome),phenotype(state.eggs[0].genome));
+ state.eggs[0].genome=randomGenome(()=>0);state.eggs[0].birthRules='founder-v4';const previous=structuredClone(state.eggs[0].genome);
+ const hatched=transition(state,{type:'hatch',eggId:state.eggs[0].id},options);assert.deepEqual(hatched.pets[0].genome,previous);assert.deepEqual(state.eggs[0].genome,previous);
+});
 
 test("every birth probability matches exhaustive weighted allele pairs and sums to 100%", () => {
   assert.equal(GENE_KEYS.length, 16);

@@ -112,6 +112,18 @@ jobs:
           - Improved QR visiting-card spacing and image import buttons; the native file input stays hidden.
           - Clearer usage typography and complete English text for populated reports, pricing states and daily tables.
           NOTES
+          elif [ "$GITHUB_REF_NAME" = v0.15.0 ]; then
+            cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+
+          ## Pawprint 0.15.0 — Keep your account, choose your connection
+          - macOS: preserve recognized file-based ChatGPT identity when using custom Providers, including across Codex restarts. A loopback inference bridge replaces ChatGPT authentication with the Provider's Keychain API key before forwarding. Keep Pawprint running and restart Codex once after the first upgrade. The client Usage menu remains ChatGPT account usage, not a third-party balance.
+          - Refresh the local Provider indicator after config readback; report refresh delivery without claiming a UI acknowledgement. Silent system switch notifications and notification-settings shortcuts replace custom desktop banners.
+          - Review changed configuration fields, back up the current TOML and restore saved connections to ChatGPT with explicit confirmation. New external changes invalidate the review; unrelated settings and login are preserved.
+          - Read recent chat Provider/model records independently of current defaults. Unknown and unsaved empty chats are not guessed; no chat message is sent to read this list.
+          - Newly claimed first eggs now hatch into a cream tabby with random hidden genes, talents and skills. Existing pets/eggs and later discovery/breeding stay unchanged.
+          - Single-click only pets the cat. Right-click opens its menu; double-click returns to work.
+          - Provider management is macOS-only. Windows includes the new first companion and gesture changes. Internal client integration can change with Codex updates; API-only connections retain direct Provider authentication.
+          NOTES
           elif [ "$GITHUB_REF_NAME" = v0.14.2 ]; then
             cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
 

@@ -70,6 +70,7 @@ import {
   geneOdds,
   formatChance,
   rarestTrait,
+  STARTER_RULES,
 } from "../core/genetics.mjs";
 import {
   dayKey,
@@ -146,8 +147,6 @@ export default function App() {
   const [partnerId, setPartnerId] = useState(PARTNERS[0].id);
   const drag = useRef(null);
   const wasDragged = useRef(false);
-  const petMenuTimer = useRef(null);
-  useEffect(() => () => clearTimeout(petMenuTimer.current), []);
   const guestId = window.location.hash.startsWith("#guest:")
     ? window.location.hash.slice(7)
     : null;
@@ -482,13 +481,12 @@ export default function App() {
           className={`float-cat-button ${pet ? "" : "float-egg-button"}`}
           data-interactive
           aria-label={pet ? "桌面宠物" : "桌面宠物蛋"}
-          title="晃晃鼠标逗它 · 点击摸摸与菜单 · 双击返回会话 · 右键菜单"
+          title="晃晃鼠标逗它 · 点击摸摸 · 双击返回会话 · 右键菜单"
           onContextMenu={(event) => {
             event.preventDefault();
             api.showMenu();
           }}
           onDoubleClick={async () => {
-            clearTimeout(petMenuTimer.current);
             if (wasDragged.current) return;
             if (!returnChat) { api.showHome("work"); return; }
             const result = await api.openWorkSession(returnChat.threadId);
@@ -497,8 +495,6 @@ export default function App() {
           onClick={() => {
             if (!wasDragged.current) {
               greetPet();
-              clearTimeout(petMenuTimer.current);
-              petMenuTimer.current = setTimeout(() => api.showMenu(), 500);
             }
           }}
           onPointerDown={(event) => {
@@ -1993,7 +1989,7 @@ export default function App() {
                   <Heart size={17} />
                   {modal.pet.parents.length
                     ? `父母：${modal.pet.parents.map((p) => p.name).join(" × ")}`
-                    : "初代宠物 · 随机生成的基因组合"}
+                    : modal.pet.birthRules===STARTER_RULES?"初遇伙伴 · 固定奶油虎斑外观":"初代宠物 · 随机生成的基因组合"}
                 </div>
                 <p className="gene-explainer">
                   {modal.pet.genome.$schema === "expression-v3"

@@ -116,13 +116,13 @@ export default function GeneCatalog({ onBreed }) {
           <Dna size={17} />
           <p>
             <strong>只在出生前确定</strong>
-            初遇蛋与探索蛋从同一基因池抽取；配种蛋继承父母。孵化后不洗基因，当前没有外貌基因突变。新蛋随机选择表现位，避免总由低编号特征占优。
+            新领取的初遇蛋固定为奶油虎斑外观，隐藏基因仍随机；探索蛋随机抽取，配种蛋继承父母。已有宠物与蛋保持原样，孵化后不洗基因。
           </p>
         </div>
         <div>
           <Info size={17} />
           <p>
-            <strong>以下概率仅适用于初代蛋</strong>
+            <strong>以下概率仅适用于探索蛋</strong>
             “显现”是出生时看得见；“携带”包含显性及隐藏基因，二者不能相加。繁育请查看配对的条件概率。
           </p>
         </div>
@@ -195,15 +195,15 @@ export default function GeneCatalog({ onBreed }) {
             <div className="gene-option-info">
               <h3>{g.name}</h3>
               <div className="gene-prob">
-                <span>初代出生显现</span>
+                <span>探索蛋显现概率</span>
                 <strong>{formatChance(g.visible)}</strong>
               </div>
               <div className="gene-prob muted">
-                <span>初代携带概率</span>
+                <span>探索蛋携带概率</span>
                 <span>{formatChance(g.carried)}</span>
               </div>
               <p className="gene-source">
-                来源：初遇蛋 / 探索蛋
+                来源：探索蛋 / 繁育继承
                 {PARTNERS.filter((p) => p.genome[category].includes(g.index))
                   .length > 0 && (
                   <>
