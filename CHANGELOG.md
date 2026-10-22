@@ -2,6 +2,20 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.15.1 — 2026-10-22
+
+- 降低宠物动画 CPU 占用；隐藏或离屏时暂停基础动画更新。
+- macOS 第三方连接默认保留 Dot 等账号入口，移除兼容开关与权限自动判断，保留实际服务名称和官方配置恢复。
+- 修复原生客户端压缩请求引起的 `Invalid JSON request`，改善 HTTP 回退。
+- 更早为正式标题添加 Provider 前缀；初始临时标题保持客户端行为。
+- 菜单栏在 Provider 名称和官方额度之间即时切换；第三方空额度记录不再覆盖已知官方快照。
+- Optimize pet animation scheduling and pause hidden/offscreen baseline motions.
+- Preserve account-service compatibility by default for macOS providers, without a mode switch or entitlement detector.
+- Decode compressed native requests, improve HTTP fallback and label generated titles before replies complete.
+- Immediately show the selected provider name or official quota in the menu bar; keep empty proxy quota records from replacing official snapshots.
+
+完整中英文说明 / Full bilingual notes: [v0.15.1](docs/releases/v0.15.1.md).
+
 ## 0.15.0 — 2026-10-17
 
 - Preserve recognized file-based ChatGPT identity across Codex restarts while using custom Providers on macOS. A local inference bridge uses Provider keys from Keychain and strips ChatGPT credentials and identity headers before forwarding. Keep Pawprint running; restart Codex once after the first upgrade. The client Usage menu shows ChatGPT account limits, separately from third-party usage.

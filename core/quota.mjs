@@ -20,7 +20,7 @@ export function parseQuotaLine(line, now = Date.now()) {
   // Keep an explicit empty Codex snapshot so a removed window cannot linger from an older record.
   return { observedAt: at, windows };
 }
-export function quotaPresentation(snapshot, selection = "weekly", now = Date.now(), language = "zh") {
+export function quotaPresentation(snapshot, selection = "weekly", now = Date.now(), language = "zh", connection = null) {
   const selected = selection === "both" ? ["session", "weekly"] : [selection === "session" ? "session" : "weekly"];
   const values = Object.fromEntries(["session", "weekly"].map(key => {
     const window = snapshot?.data?.windows?.[key];
@@ -38,7 +38,13 @@ export function quotaPresentation(snapshot, selection = "weekly", now = Date.now
   const title = snapshot?.enabled ? selected.map(k => values[k].text).join(" · ") : "";
   const timestamp = snapshot?.data?.observedAt;
   const source = timestamp ? `本机额度快照：${new Date(timestamp).toLocaleString(language === "en" ? "en-US" : "zh-CN")}` : snapshot?.loading ? "正在读取本机额度记录…" : "等待 Codex 写入额度记录";
-  return { title, values, source,
+  if(connection?.selected&&connection.selected!=='openai'){
+    const name=String(connection.name||connection.selected).replace(/[\x00-\x1f\x7f]/g,' ').trim();
+    const unavailable=language==='en'?'Provider balance and quota are not available.':'尚未接入第三方余额与额度查询。';
+    return {kind:'provider',title:snapshot?.enabled?name:'',values,source:unavailable,
+      tooltip:['爪印 · Pawprint',name,unavailable].join('\n')};
+  }
+  return { kind:'quota', title, values, source,
     tooltip: ["爪印 · Pawprint", ...(snapshot?.enabled ? [values.weekly.detail, values.session.detail, source, "~ 表示记录已变旧；W = 周。未向服务器实时查询。", ...(snapshot.error ? [snapshot.error] : [])] : [])].join("\n"),
   };
 }

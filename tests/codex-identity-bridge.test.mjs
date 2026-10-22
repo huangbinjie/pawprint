@@ -1,7 +1,9 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import http from 'node:http';import path from 'node:path';import os from 'node:os';
+import {zstdCompressSync,gzipSync,deflateSync,brotliCompressSync} from 'node:zlib';
 import {mkdtemp,rm,readFile,writeFile,stat} from 'node:fs/promises';
 import {CodexIdentityBridge,hasFileChatGPTLogin} from '../electron/codex-identity-bridge.mjs';
+import {readRouteEvidence} from '../electron/codex-route-evidence.mjs';
 const id='pawprint_'+ 'a'.repeat(32);
 test('stale file credentials do not override an explicitly selected system or ephemeral credential store',async t=>{
  const directory=await mkdtemp(path.join(os.tmpdir(),'paw-login-store-'));t.after(()=>rm(directory,{recursive:true,force:true}));
@@ -24,6 +26,51 @@ test('local bridge replaces provider authentication and never forwards ChatGPT i
  assert.equal(response.status,200);assert.match(await response.text(),/response.completed/);assert.equal(response.headers.get('set-cookie'),null);assert.equal(f.seen.length,1);assert.equal(f.seen[0].headers.authorization,'Bearer THIRD_PARTY_KEY');assert.equal(f.seen[0].path,'/v1/responses');assert.ok(!JSON.stringify(f.seen).includes('PRIVATE_'));
  assert.ok(!(await readFile(f.bridge.file,'utf8')).includes('TOKEN'));assert.ok(!(await readFile(f.bridge.file,'utf8')).includes('THIRD_PARTY_KEY'));if(process.platform!=='win32')assert.equal((await stat(f.bridge.file)).mode&0o777,0o600);
  const compact=await fetch(f.bridge.baseUrl(id)+'/responses/compact',{method:'POST',body:'{}'});assert.equal(compact.status,200);assert.equal(await compact.text(),'{}');assert.equal(f.seen[1].path,'/v1/responses/compact');
+});
+test('observed routes retain only thread/provider/model metadata for native OpenAI-labelled chats',async t=>{
+ const f=await setup(t),threadId='01a0f1ea-4534-7651-b950-000000000001';
+ const r=await fetch(f.bridge.baseUrl(id)+'/responses',{method:'POST',headers:{'thread-id':threadId,Authorization:'Bearer PRIVATE_LOGIN',Cookie:'PRIVATE_COOKIE'},body:JSON.stringify({model:'test-model',input:'PRIVATE_CONVERSATION'})});await r.text();
+ for(let i=0;i<30&&!Object.keys(await readRouteEvidence(f.directory)).length;i++)await new Promise(r=>setTimeout(r,10));
+ const evidence=await readRouteEvidence(f.directory);assert.equal(evidence[threadId].providerId,id);assert.equal(evidence[threadId].model,'test-model');assert.ok(Number.isSafeInteger(evidence[threadId].at));assert.ok(!JSON.stringify(evidence).includes('PRIVATE'));assert.ok(!JSON.stringify(evidence).includes(f.bridge.capability));
+ await f.bridge.routeEvidence.record({threadId:'not-a-thread',providerId:id,model:'test'});assert.equal(Object.keys(await readRouteEvidence(f.directory)).length,1);
+});
+test('route observation is published before the provider sends any response headers', {timeout:3000},async t=>{
+ const f=await setup(t),threadId='01a0f1ea-4534-7651-b950-000000000002';
+ let dispatched=false,release,routeReady;const routed=new Promise(r=>routeReady=r);
+ f.bridge.onRoute=()=>routeReady();
+ f.bridge.fetchImpl=(_,options)=>{dispatched=true;return new Promise((resolve,reject)=>{release=()=>resolve(new Response('mock-stream'));options.signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true});});};
+ const response=fetch(f.bridge.baseUrl(id)+'/responses',{method:'POST',headers:{'thread-id':threadId},body:JSON.stringify({model:'test-model'})});
+ t.after(()=>response.catch(()=>{}));
+ await routed;assert.equal(dispatched,true);
+ const evidence=await readRouteEvidence(f.directory);assert.equal(evidence[threadId].providerId,id);
+ release();assert.equal(await (await response).text(),'mock-stream');
+});
+test('a failed provider response still identifies the attempted destination for the chat title',async t=>{
+ const f=await setup(t),threadId='01a0f1ea-4534-7651-b950-000000000003';
+ let ready;const routed=new Promise(r=>ready=r);f.bridge.onRoute=()=>ready();f.bridge.fetchImpl=async()=>new Response('Service unavailable',{status:503});
+ const response=await fetch(f.bridge.baseUrl(id)+'/responses',{method:'POST',headers:{'thread-id':threadId},body:JSON.stringify({model:'test-model'})});assert.equal(response.status,503);await response.text();await routed;
+ assert.equal((await readRouteEvidence(f.directory))[threadId].providerId,id);
+});
+test('compressed native ChatGPT requests are decoded before JSON parsing and provider forwarding',async t=>{
+ const f=await setup(t),body=JSON.stringify({model:'test-model',input:'压缩后的请求',stream:true});
+ for(const [encoding,compress] of [['zstd',zstdCompressSync],['gzip',gzipSync],['deflate',deflateSync],['br',brotliCompressSync]]){
+  const r=await fetch(f.bridge.baseUrl(id)+'/responses',{method:'POST',headers:{'Content-Encoding':encoding,Authorization:'Bearer PRIVATE_CHATGPT_TOKEN','ChatGPT-Account-ID':'PRIVATE_ACCOUNT'},body:compress(Buffer.from(body))});
+  assert.equal(r.status,200,encoding+': '+await r.text());
+  const upstream=f.seen.at(-1);assert.equal(upstream.body,body);assert.equal(upstream.headers['content-encoding'],undefined);assert.equal(upstream.headers.authorization,'Bearer THIRD_PARTY_KEY');assert.ok(!JSON.stringify(upstream).includes('PRIVATE_'));
+ }
+ const compact=await fetch(f.bridge.baseUrl(id)+'/responses/compact',{method:'POST',headers:{'Content-Encoding':'zstd'},body:zstdCompressSync(Buffer.from(body))});assert.equal(compact.status,200);await compact.text();assert.equal(f.seen.at(-1).path,'/v1/responses/compact');assert.equal(f.seen.at(-1).body,body);
+});
+test('invalid, unsupported and oversized compressed requests never reach the provider',async t=>{
+ const f=await setup(t);let keyReads=0;f.keychain.get=async()=>{keyReads++;return 'THIRD_PARTY_KEY';};
+ const cases=[
+  ['zstd',Buffer.from('not-compressed'),400],
+  ['zstd',zstdCompressSync(Buffer.from('not-json')),400],
+  ['unknown',Buffer.from('{}'),415],
+  ['gzip, zstd',Buffer.from('{}'),415],
+  ['zstd',zstdCompressSync(Buffer.alloc(32*1024*1024+1,32)),413],
+ ];
+ for(const [encoding,body,status] of cases){const r=await fetch(f.bridge.baseUrl(id)+'/responses',{method:'POST',headers:{'Content-Encoding':encoding},body});assert.equal(r.status,status);assert.ok(!(await r.text()).includes('THIRD_PARTY_KEY'));}
+ assert.equal(f.seen.length,0);assert.equal(keyReads,0);
 });
 test('unknown routes, websites and removed providers cannot use the bridge',async t=>{
  const f=await setup(t),url=f.bridge.baseUrl(id)+'/responses';

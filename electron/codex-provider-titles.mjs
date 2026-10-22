@@ -1,10 +1,11 @@
 import {spawn} from 'node:child_process';
 import {readFile,writeFile,mkdir,rename,access,stat} from 'node:fs/promises';
-import {constants} from 'node:fs';
+import {constants,watch} from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {parse} from 'smol-toml';
 import {validWorkId} from '../core/work.mjs';
+import {readRouteEvidence} from './codex-route-evidence.mjs';
 import {cleanWorkLabel,readWorkTitles} from './work-titles.mjs';
 
 export function providerTitle(title, providerId, label) {
@@ -15,17 +16,20 @@ export function providerTitle(title, providerId, label) {
   if (title.startsWith(prefix)) return null;
   return prefix + title;
 }
-export async function readProviderTitleCandidates(directory) {
+export async function readProviderTitleCandidates(directory,dataDirectory) {
   let db;
   try {
     const file=path.join(directory,'state_5.sqlite');await stat(file);
     const {DatabaseSync}=await import('node:sqlite');db=new DatabaseSync(file,{readOnly:true});
     const columns=new Set(db.prepare('PRAGMA table_info(threads)').all().map(r=>r.name));
     if(!['id','model_provider','updated_at'].every(k=>columns.has(k)))return [];
-    const filters=["model_provider IS NOT NULL","model_provider != ''","model_provider != 'openai'",columns.has('archived')?'archived=0':'1',columns.has('source')?"(source IS NULL OR source NOT LIKE '%subagent%')":'1'];
+    const routes=await readRouteEvidence(dataDirectory);
+    const filters=["model_provider IS NOT NULL","model_provider != ''",columns.has('archived')?'archived=0':'1',columns.has('source')?"(source IS NULL OR (lower(source) NOT LIKE '%subagent%' AND lower(source) NOT LIKE '%cloud%' AND lower(source) NOT LIKE '%remote%'))":'1'];
     const rows=db.prepare(`SELECT id,model_provider FROM threads WHERE ${filters.join(' AND ')} ORDER BY updated_at DESC LIMIT 64`).all().filter(r=>validWorkId(r.id));
     const titles=new Map((await readWorkTitles(directory,rows.map(r=>r.id))).map(r=>[r.threadId,r.title]));
-    return rows.filter(r=>titles.get(r.id)).map(r=>({id:r.id,providerId:r.model_provider,title:titles.get(r.id)}));
+    return rows.filter(r=>titles.get(r.id)&&(r.model_provider!=='openai'||routes[r.id])).map(r=>r.model_provider==='openai'
+      ?{id:r.id,providerId:routes[r.id].providerId,runtimeProviderId:'openai',title:titles.get(r.id)}
+      :{id:r.id,providerId:r.model_provider,title:titles.get(r.id)});
   } catch { return []; } finally { db?.close(); }
 }
 export async function findCodexBinary() {
@@ -58,7 +62,7 @@ export class CodexTitleClient {
   async close(){this.fail();const child=this.child;if(!child||child.exitCode!==null)return;await new Promise(resolve=>{child.once('exit',resolve);child.kill();const timer=setTimeout(()=>{child.kill('SIGKILL');resolve();},1000);timer.unref?.();});}
 }
 export class CodexProviderTitles {
-  constructor({directory,dataDirectory,onChange=()=>{},readCandidates=readProviderTitleCandidates,clientFactory,now=Date.now}) {
+  constructor({directory,dataDirectory,onChange=()=>{},readCandidates=dir=>readProviderTitleCandidates(dir,dataDirectory),clientFactory,now=Date.now}) {
     Object.assign(this,{directory,dataDirectory,onChange,readCandidates,now});
     this.file=path.join(dataDirectory,'codex-provider-titles.json');this.state={enabled:true,edits:{}};
     this.clientFactory=clientFactory|| (async()=>new CodexTitleClient({binary:await findCodexBinary(),directory}).connect());
@@ -69,8 +73,26 @@ export class CodexProviderTitles {
   async load(){try{const saved=JSON.parse(await readFile(this.file,'utf8'));if(typeof saved.enabled==='boolean')this.state.enabled=saved.enabled;if(saved.edits&&typeof saved.edits==='object'&&!Array.isArray(saved.edits))this.state.edits=saved.edits;}catch(e){if(e.code!=='ENOENT')this.publish({status:'error',error:'标题标注记录无法读取。'});}}
   async save(){await mkdir(this.dataDirectory,{recursive:true,mode:0o700});const tmp=this.file+'.'+randomUUID()+'.tmp';try{await writeFile(tmp,JSON.stringify(this.state),{mode:0o600,flag:'wx'});await rename(tmp,this.file);}finally{const{rm}=await import('node:fs/promises');await rm(tmp,{force:true});}}
   async configure(enabled){if(typeof enabled!=='boolean')throw Error('Invalid title setting');this.state.enabled=enabled;await this.save();if(enabled)await this.refresh();else this.publish({status:'off',error:null});return this.snapshot();}
-  start(){if(this.timer)return;void this.refresh();this.timer=setInterval(()=>void this.refresh(),15000);this.timer.unref?.();}
-  refresh(){if(this.pending)return this.pending;if(!this.state.enabled||this.closed)return Promise.resolve();this.pending=this.run().catch(()=>this.publish({status:'error',error:'自动标题标注暂不可用，请稍后重试。'})).finally(()=>{this.pending=null;});return this.pending;}
+  start(){
+    if(this.timer||this.closed)return;
+    // Watch the parent so the title index can be created or replaced after
+    // startup. Ignore streaming rollout/WAL writes to avoid repeated scans.
+    try{
+      this.watcher=watch(this.directory,{persistent:false},(_,file)=>{
+        if(String(file)!=='session_index.jsonl'||this.closed||!this.state.enabled)return;
+        clearTimeout(this.titleTimer);this.titleTimer=setTimeout(()=>void this.refresh(),80);this.titleTimer.unref?.();
+      });
+      this.watcher.on('error',()=>{this.watcher?.close();this.watcher=null;});
+    }catch{ /* Retain the existing polling fallback if watching is unavailable. */ }
+    void this.refresh();this.timer=setInterval(()=>void this.refresh(),15000);this.timer.unref?.();
+  }
+  refresh(){
+    if(!this.state.enabled||this.closed)return Promise.resolve();
+    this.refreshAgain=true;if(this.pending)return this.pending;
+    this.pending=(async()=>{do{this.refreshAgain=false;await this.run();}while(this.refreshAgain&&!this.closed&&this.state.enabled);})()
+      .catch(()=>this.publish({status:'error',error:'自动标题标注暂不可用，请稍后重试。'})).finally(()=>{this.pending=null;});
+    return this.pending;
+  }
   async run(){
     const candidates=await this.readCandidates(this.directory);if(!candidates.length){this.publish({status:'watching',error:null});return;}
     let config={};try{config=parse(await readFile(path.join(this.directory,'config.toml'),'utf8'));}catch{throw Error('Cannot read provider names');}
@@ -86,7 +108,7 @@ export class CodexProviderTitles {
         const current=(await this.readCandidates(this.directory)).find(r=>r.id===plan.id);
         if(!current||current.title!==plan.title||current.providerId!==plan.providerId)continue;
         const response=await client.request('thread/read',{threadId:plan.id,includeTurns:false});
-        if(response?.thread?.id!==plan.id||response.thread.modelProvider!==plan.providerId)continue;
+        if(response?.thread?.id!==plan.id||response.thread.modelProvider!==(plan.runtimeProviderId||plan.providerId))continue;
         const fresh=(await this.readCandidates(this.directory)).find(r=>r.id===plan.id);
         if(!fresh||fresh.title!==plan.title||fresh.providerId!==plan.providerId)continue;
         // Persist intent first, so an interrupted update can be retried idempotently.
@@ -97,5 +119,5 @@ export class CodexProviderTitles {
       }
     }finally{await client?.close();}
   }
-  async close(){this.closed=true;clearInterval(this.timer);await this.pending;}
+  async close(){this.closed=true;clearInterval(this.timer);clearTimeout(this.titleTimer);this.watcher?.close();await this.pending;}
 }

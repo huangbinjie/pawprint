@@ -82,16 +82,28 @@ jobs:
             cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
           Apple silicon Mac beta. This app is ad-hoc signed so its bundle contents can be checked, but it is not Apple Developer ID signed or notarized.
 
+          Apple 芯片 Mac 内测版：使用临时封装签名，尚未进行 Apple Developer ID 签名或公证。请核对下载文件与附带的 SHA-256 校验文件。
+
           On first launch after downloading, macOS may say Apple cannot verify Pawprint. Click Done, then open System Settings → Privacy & Security → Open Anyway for Pawprint, and confirm. You can also right-click the app and choose Open. Verify the downloaded zip against the included SHA-256 file. Do not disable Gatekeeper globally. If macOS says the app is damaged, stop and report it instead of forcing it open.
+
+          首次打开若提示无法验证开发者，请点“完成”，再到“系统设置 → 隐私与安全性”选择 Pawprint 的“仍要打开”并确认；也可右键应用选择“打开”。不要全局关闭 Gatekeeper。若提示应用“已损坏”，请停止并反馈。
           NOTES
           else
-            echo 'Developer ID-signed and Apple-notarized Mac build.' > "$RUNNER_TEMP/release-notes.md"
+            printf '%s\n' 'Developer ID-signed and Apple-notarized Mac build.' 'Mac 版本已使用 Developer ID 签名并通过 Apple 公证。' > "$RUNNER_TEMP/release-notes.md"
           fi
           cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
 
           Windows 10/11 x64: download the `Pawprint-*-win-x64-setup.exe` installer and its SHA-256 file below. This Windows beta is unsigned. Its packaged app is built and smoke-tested on Windows CI; interactive desktop and cross-platform LAN behavior still need hands-on verification. Version 0.11.10 and later support verified in-app updates and preserve the save. Version 0.11.9 and earlier need one manual installation to gain this feature. Windows ARM64-native builds are not included.
+
+          Windows 10/11 x64：下载下方的 `Pawprint-*-win-x64-setup.exe` 安装包及 SHA-256 校验文件。本内测包未签名；CI 会构建并执行基本运行检查，桌面交互和跨平台局域网体验仍需实机验证。0.11.10 及以上支持保留存档的应用内更新；更旧版本需先手动安装一次。不包含 Windows ARM64 原生版。
           NOTES
-          if [ "$GITHUB_REF_NAME" = v0.12.0 ]; then
+          RELEASE_TITLE="$GITHUB_REF_NAME"
+          if [ -f "docs/releases/$GITHUB_REF_NAME.md" ]; then
+            RELEASE_TITLE=$(sed -n '1s/^# //p' "docs/releases/$GITHUB_REF_NAME.md")
+            grep -q '^## 中文' "docs/releases/$GITHUB_REF_NAME.md"
+            grep -q '^## English' "docs/releases/$GITHUB_REF_NAME.md"
+            cat "docs/releases/$GITHUB_REF_NAME.md" >> "$RUNNER_TEMP/release-notes.md"
+          elif [ "$GITHUB_REF_NAME" = v0.12.0 ]; then
             cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
 
           ## Pawprint 0.12.0
@@ -182,7 +194,7 @@ jobs:
           - API chat, local model management and voice shortcuts are retired. Previous provider files remain untouched and are no longer loaded. No API key is needed for the pet or work helpers.
           NOTES
           fi
-          gh release create "$GITHUB_REF_NAME" artifacts/* --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft
+          gh release create "$GITHUB_REF_NAME" artifacts/* --title "$RELEASE_TITLE" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --draft
 
   windows-x64:
     needs: mac-arm64

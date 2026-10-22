@@ -2,6 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {providerTitle,readProviderTitleCandidates,CodexProviderTitles} from '../electron/codex-provider-titles.mjs';
+import {CodexRouteEvidence} from '../electron/codex-route-evidence.mjs';
 const id='e8d6ae33-8b42-4b27-97de-a7b29757484c',other='4a400d04-67fd-4163-993b-6d3dbbb3067e';
 async function directory(t){const p=await mkdtemp(path.join(os.tmpdir(),'paw-provider-titles-'));t.after(()=>rm(p,{recursive:true,force:true}));return p;}
 test('prefix only known custom providers, preserve user prefixes and avoid duplicate labels',()=>{
@@ -32,4 +33,36 @@ test('skip threads with changed or unverifiable provider and disabling prevents 
  const dir=await directory(t);await writeFile(path.join(dir,'config.toml'),'');let writes=0;
  const service=new CodexProviderTitles({directory:dir,dataDirectory:dir,readCandidates:async()=>[{id,providerId:'sample',title:'Original'}],clientFactory:async()=>({request:async(method)=>{if(method==='thread/name/set')writes++;return {thread:{id,modelProvider:'openai'}};},close:async()=>{}})});
  await service.refresh();assert.equal(writes,0);await service.configure(false);await service.refresh();assert.equal(writes,0);assert.equal(service.snapshot().enabled,false);
+});
+test('native OpenAI-labelled chats are marked only after an observed third-party request',async t=>{
+ const dir=await directory(t),db=new DatabaseSync(path.join(dir,'state_5.sqlite'));
+ db.exec('CREATE TABLE threads(id TEXT,model_provider TEXT,name TEXT,cwd TEXT,updated_at INTEGER,archived INTEGER,source TEXT)');db.prepare('INSERT INTO threads VALUES(?,?,?,?,?,?,?)').run(id,'openai','My chat',dir,1,0,'cli');db.close();
+ assert.deepEqual(await readProviderTitleCandidates(dir,dir),[]);
+ const providerId='pawprint_'+'a'.repeat(32);await new CodexRouteEvidence(dir).record({threadId:id,providerId,model:'test-model'});
+ const rows=await readProviderTitleCandidates(dir,dir);assert.equal(rows[0].providerId,providerId);assert.equal(rows[0].runtimeProviderId,'openai');
+ await writeFile(path.join(dir,'config.toml'),`[model_providers.${providerId}]\nname="My gateway"\n`);let renamed;
+ const service=new CodexProviderTitles({directory:dir,dataDirectory:dir,clientFactory:async()=>({request:async(method,p)=>method==='thread/read'?{thread:{id,modelProvider:'openai'}}:(renamed=p.name,{}),close:async()=>{}})});await service.refresh();assert.equal(renamed,'[My gateway] My chat');await service.close();
+});
+test('a title created after route discovery is prefixed through index events before the polling interval', {timeout:4000},async t=>{
+ const dir=await directory(t),db=new DatabaseSync(path.join(dir,'state_5.sqlite'));
+ t.after(()=>db.close());
+ db.exec('CREATE TABLE threads(id TEXT,model_provider TEXT,name TEXT,cwd TEXT,updated_at INTEGER,archived INTEGER,source TEXT)');db.prepare('INSERT INTO threads VALUES(?,?,?,?,?,?,?)').run(id,'openai',null,dir,1,0,'cli');
+ const providerId='pawprint_'+'a'.repeat(32);await new CodexRouteEvidence(dir).record({threadId:id,providerId,model:'test-model'});
+ await writeFile(path.join(dir,'config.toml'),`[model_providers.${providerId}]\nname="Fast gateway"\n`);
+ let finished;const renamed=new Promise(r=>finished=r);
+ const service=new CodexProviderTitles({directory:dir,dataDirectory:dir,clientFactory:async()=>({request:async(method,p)=>{
+  if(method==='thread/read')return {thread:{id,modelProvider:'openai'}};
+  db.prepare('UPDATE threads SET name=? WHERE id=?').run(p.name,id);finished(p.name);return {};
+ },close:async()=>{}})});t.after(()=>service.close());service.start();service.watcher.ref();await service.refresh();
+ assert.deepEqual(await readProviderTitleCandidates(dir,dir),[]);
+ db.prepare('UPDATE threads SET name=? WHERE id=?').run('Early title',id);
+ await writeFile(path.join(dir,'session_index.jsonl'),JSON.stringify({id,thread_name:'Early title',updated_at:new Date().toISOString()})+'\n');
+ assert.equal(await renamed,'[Fast gateway] Early title');await service.close();
+ const before=service.snapshot().updated;await writeFile(path.join(dir,'session_index.jsonl'),'');assert.equal(service.snapshot().updated,before);
+});
+test('a refresh event during an active scan is drained instead of waiting for the next poll',async t=>{
+ const dir=await directory(t);await writeFile(path.join(dir,'config.toml'),'');let reads=0,release;
+ const paused=new Promise(r=>release=r);
+ const service=new CodexProviderTitles({directory:dir,dataDirectory:dir,readCandidates:async()=>{reads++;if(reads===1)await paused;return [];}});t.after(()=>service.close());
+ const first=service.refresh();service.refresh();release();await first;assert.equal(reads,2);
 });

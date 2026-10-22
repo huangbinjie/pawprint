@@ -2,9 +2,10 @@ import path from 'node:path';
 import {stat} from 'node:fs/promises';
 import {validWorkId} from '../core/work.mjs';
 import {cleanWorkLabel,readWorkTitles} from './work-titles.mjs';
+import {readRouteEvidence} from './codex-route-evidence.mjs';
 
 // Metadata only. A recorded provider is not evidence of a completed API request.
-export async function readCodexSessionSources(directory) {
+export async function readCodexSessionSources(directory,dataDirectory) {
   let db;
   try {
     const file=path.join(directory,'state_5.sqlite');await stat(file);
@@ -14,6 +15,10 @@ export async function readCodexSessionSources(directory) {
     const filters=[columns.has('archived')?'archived=0':'1',columns.has('source')?"(source IS NULL OR (lower(source) NOT LIKE '%subagent%' AND lower(source) NOT LIKE '%remote%' AND lower(source) NOT LIKE '%cloud%'))":'1'];
     const rows=db.prepare(`SELECT id,model_provider,${columns.has('model')?'model':'NULL AS model'} FROM threads WHERE ${filters.join(' AND ')} ORDER BY updated_at DESC LIMIT 8`).all().filter(r=>validWorkId(r.id));
     const titles=new Map((await readWorkTitles(directory,rows.map(r=>r.id))).map(r=>[r.threadId,r.title]));
-    return {status:'available',items:rows.map(r=>({id:r.id,title:titles.get(r.id)||null,providerId:cleanWorkLabel(r.model_provider,160)||null,model:cleanWorkLabel(r.model,160)||null,requestVerified:false}))};
+    const routes=await readRouteEvidence(dataDirectory);
+    return {status:'available',items:rows.map(r=>{
+      const route=r.model_provider==='openai'?routes[r.id]:null;
+      return {id:r.id,title:titles.get(r.id)||null,providerId:route?.providerId||cleanWorkLabel(r.model_provider,160)||null,model:route?.model||cleanWorkLabel(r.model,160)||null,requestVerified:false,...(route?{source:'last-observed-route',routedAt:route.at}:{})};
+    })};
   }catch{return {status:'unavailable',items:[]};}finally{db?.close();}
 }

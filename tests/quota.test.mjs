@@ -7,6 +7,7 @@ import { parseQuotaLine, quotaPresentation } from "../core/quota.mjs";
 import { scanQuota } from "../electron/quota/scan.mjs";
 import { QuotaMonitor } from "../electron/quota/monitor.mjs";
 import { initialState, transition } from "../core/game.mjs";
+import {CodexRouteEvidence} from '../electron/codex-route-evidence.mjs';
 const now = Date.now();
 const window = (minutes, used = 62) => ({ window_minutes: minutes, used_percent: used, resets_at: Math.floor((now + minutes * 30000) / 1000) });
 const record = (q, at = now) => JSON.stringify({ type: "event_msg", timestamp: new Date(at).toISOString(), payload: { type: "token_count", rate_limits: q } }) + "\n";
@@ -28,6 +29,14 @@ test("missing, stale, expired and malformed quotas never become a fabricated ful
   assert.equal(parseQuotaLine("not json", now), null);
   assert.equal(parseQuotaLine(record({ primary: window(10080) }, now + 120000), now), null);
   assert.deepEqual(parseQuotaLine(record({ primary: { ...window(300), resets_at: 999999999999 } }), now).windows, {});
+});
+test('provider selection replaces both empty and populated quota labels and official selection restores quota',()=>{
+ const data=parseQuotaLine(record({primary:window(10080,56)}),now),connection={selected:'pawprint_gateway',name:'feng-codex'};
+ for(const snapshot of [{enabled:true,data:null},{enabled:true,data},{enabled:true,data:{observedAt:now,windows:{}}}]){
+  const view=quotaPresentation(snapshot,'weekly',now,'zh',connection);assert.equal(view.kind,'provider');assert.equal(view.title,'feng-codex');assert.ok(!view.tooltip.includes('44%'));
+ }
+ assert.equal(quotaPresentation({enabled:true,data},'weekly',now,'zh',{selected:'openai'}).title,'W 44%');
+ assert.equal(quotaPresentation({enabled:false,data},'weekly',now,'zh',connection).title,'');
 });
 async function fixture(t) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "pawprint-quota-"));
@@ -56,6 +65,15 @@ test("a newer explicit empty snapshot replaces old windows; same-time conflictin
   await writeFile(file, record({ primary: window(10080) }) + record({ primary: window(10080, 70) }));
   const result = await scanQuota({ directory, now });
   assert.equal(result.ambiguous, true); assert.deepEqual(result.windows, {});
+});
+test('empty snapshots from observed third-party routes cannot erase or crowd out official quota',async t=>{
+ const {directory,file}=await fixture(t),threadId='01a0f1ea-4534-7651-b950-000000000004';
+ await writeFile(file,record({primary:window(10080,56)}));
+ await new CodexRouteEvidence(directory).record({threadId,providerId:'pawprint_'+'a'.repeat(32),model:'gateway-model'});
+ for(let i=0;i<18;i++)await writeFile(path.join(directory,'sessions',`proxy-${i}-${threadId}.jsonl`),record({primary:null,secondary:null},now+1));
+ const data=await scanQuota({directory,dataDirectory:directory,now});assert.equal(data.windows.weekly.remaining,44);
+ // Official empty snapshots continue to revoke old windows as before.
+ await appendFile(file,record({primary:null,secondary:null},now+2));assert.deepEqual((await scanQuota({directory,dataDirectory:directory,now})).windows,{});
 });
 test("worker reads quota without external commands and clears memory on disconnect or directory change", async t => {
   const { directory, file } = await fixture(t);

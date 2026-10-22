@@ -74,6 +74,7 @@ app.setPath(
 let attentionBridge,approvalObserver,attentionBubbleEvent;
 let codexAccounts, codexAccountsPromise, providerTitles,identityBridge;
 let codexProviderNames = {};
+let codexTrayConnection = null;
 let petControls,setupGuideWindow,setupGuideValue;
 let petControlsRevealed=false,petControlsHideTimer;
 let petControlsPressed=false,petControlsInteractive=false;
@@ -124,6 +125,7 @@ function snapshot() {
   return {
     ...structuredClone(store.state),
     providerNames: {...codexProviderNames},
+    codexConnection: codexTrayConnection,
     providerTitles: providerTitles?.snapshot() || {enabled:true,status:"idle",error:null,updated:0},
     platform: process.platform,
     appVersion: app.getVersion(),
@@ -411,14 +413,19 @@ function menuAction(action) {
     .catch((error) => dialog.showErrorBox(tr("爪印"), tr(error.message)));
 }
 const managedCodexHome = () => test ? (process.env.PAWPRINT_TEST_CODEX_HOME || path.join(app.getPath('userData'),'codex')) : defaultCodexHome();
+function updateCodexTrayConnection(status){
+  codexTrayConnection={selected:status.selected,name:status.selected==='openai'?'ChatGPT / OpenAI':status.providers?.find(p=>p.id===status.selected)?.name||status.providerNames?.[status.selected]||status.selected};
+  if(store&&!quitting)broadcast();
+}
 async function getCodexAccounts() {
   // Account settings use the actual Codex home, never the usage-import directory.
   const directory = managedCodexHome();
   if (!codexAccountsPromise) codexAccountsPromise = (async () => {
     const keychain=new MacKeychain();
-    identityBridge=process.platform==='darwin'?new CodexIdentityBridge({dataDirectory:app.getPath('userData'),keychain}):null;
-    const manager = new CodexAccounts({directory, dataDirectory: app.getPath('userData'),keychain,identityBridge,refreshClient:refreshCodexProviderIndicator});
+    identityBridge=process.platform==='darwin'?new CodexIdentityBridge({dataDirectory:app.getPath('userData'),keychain,onRoute:()=>{void providerTitles?.refresh();}}):null;
+    const manager = new CodexAccounts({directory, dataDirectory: app.getPath('userData'),keychain,identityBridge,refreshClient:refreshCodexProviderIndicator,onSelection:updateCodexTrayConnection});
     await manager.load();codexAccounts=manager;
+    updateCodexTrayConnection(await manager.status());
     try{await manager.prepareIdentityConnection();}catch(e){manager.identityError=e.message;}
     return manager;
   })().catch(error => { codexAccountsPromise = null; throw error; });
@@ -461,7 +468,7 @@ async function showCodexAccountsMenu() {
 
 function menuTemplate() {
   const pet = store.state.pets.find((p) => p.id === store.state.activePetId);
-  const q = quotaPresentation(quota?.snapshot(), store.state.settings.quotaWindow, Date.now(), language());
+  const q = quotaPresentation(quota?.snapshot(), store.state.settings.quotaWindow, Date.now(), language(),codexTrayConnection);
   const waiting=store.state.settings.attentionEnabled?attentionTarget(store.state):null;
   return [
     {
@@ -475,8 +482,7 @@ function menuTemplate() {
     ...(updates?.snapshot().status === 'available' ? [{ label: `更新到 v${updates.snapshot().release.version}`, click: () => createHome('settings') }] : []),
     { type: "separator" },
     ...(store.state.settings.quotaEnabled ? [
-      { label: q.values.weekly.detail, enabled: false },
-      { label: q.values.session.detail, enabled: false },
+      ...(q.kind==='provider'?[{label:codexTrayConnection.name,enabled:false}]:[{ label: q.values.weekly.detail, enabled: false },{ label: q.values.session.detail, enabled: false }]),
       { label: q.source, enabled: false },
       { label: "重新读取额度快照", click: () => menuAction(() => quota?.refresh()) },
     ] : []),
@@ -591,7 +597,7 @@ function notifyInvites() {
 }
 function updateTray() {
   if (tray && !tray.isDestroyed()) {
-    const q = quotaPresentation(quota?.snapshot(), store.state.settings.quotaWindow, Date.now(), language());
+    const q = quotaPresentation(quota?.snapshot(), store.state.settings.quotaWindow, Date.now(), language(),codexTrayConnection);
     const invitations = pendingInvites().length;
     if (process.platform === "darwin") tray.setTitle(store.state.settings.trayCompact ? "" : [q.title, invitations ? String(invitations) : ""].filter(Boolean).join(" · "), { fontType: "monospacedDigit" });
     tray.setToolTip(tr(q.tooltip + (invitations ? `\n${invitations} 个待处理邀请` : "")));
@@ -750,6 +756,7 @@ function syncActivity() {
 function syncQuota() {
   return quota?.configure({
     directory: store.state.settings.codexHome || (test && process.env.PAWPRINT_TEST_CODEX_HOME) || defaultCodexHome(),
+    dataDirectory:app.getPath('userData'),
     enabled: store.state.settings.quotaEnabled === true,
   });
 }
@@ -1184,8 +1191,9 @@ else {
         else if (action === 'title-labels-refresh') { await providerTitles.refresh(); result = await manager.status(); }
         else throw new Error('无效的账号操作。');
         codexProviderNames=result.providerNames||{};
+        updateCodexTrayConnection(result);
         broadcast();
-        return {...result, titleLabels:providerTitles?.snapshot(),sessions:await readCodexSessionSources(managedCodexHome())};
+        return {...result, titleLabels:providerTitles?.snapshot(),sessions:await readCodexSessionSources(managedCodexHome(),app.getPath('userData'))};
       });
       register("paw:state", () => snapshot());
       register("paw:update-check", () => updates.check());

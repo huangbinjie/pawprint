@@ -4,7 +4,7 @@ import {lstat} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 
 // Observed Desktop coordination protocol, not a public API. This only asks the
-// account menu to reread its local default-provider cache; delivery has no UI ack.
+// account menu and capability checks to reread local config; no UI acknowledgement.
 export async function refreshCodexProviderIndicator({directory, socketPath=path.join(directory,'ipc','ipc.sock'), timeoutMs=1500}) {
   const unavailable={status:'unavailable'};
   try {
@@ -39,9 +39,11 @@ export async function refreshCodexProviderIndicator({directory, socketPath=path.
             if(initialized||message.type!=='response'||message.requestId!==requestId)continue;
             if(message.method!=='initialize'||message.resultType!=='success'||typeof message.result?.clientId!=='string'||!message.result.clientId)throw Error('Incompatible IPC');
             initialized=true;
-            // Version 0 is the observed version of this broadcast. Scope the
-            // invalidation to the exact local account-menu query, not all hosts.
-            send({type:'broadcast',method:'query-cache-invalidate',version:0,sourceClientId:message.result.clientId,params:{queryKey:['user-saved-config','local',null]}},error=>finish(error?unavailable:{status:'requested'}));
+            // Dot checks the required effective-config query, independently of
+            // the account menu. Invalidate only local root-config dependencies.
+            const keys=[['user-saved-config','local',null],['config','read-response','local',null],['config','layered-response','local',null],['config','effective','local',null]];
+            let pending=keys.length;
+            for(const queryKey of keys)send({type:'broadcast',method:'query-cache-invalidate',version:0,sourceClientId:message.result.clientId,params:{queryKey}},error=>{if(error)finish(unavailable);else if(--pending===0)finish({status:'requested'});});
           }
         }catch{finish(unavailable);}
       });

@@ -7,6 +7,32 @@ import {parse} from 'smol-toml';
 import {seedMatureCompanion} from './fixtures/game.mjs';
 import {CodexAccounts} from '../electron/codex-accounts.mjs';
 
+test('account preservation is fixed on without a setting or entitlement detector',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'paw-fixed-identity-')),directory=path.join(root,'codex'),profile=path.join(root,'paw');await mkdir(directory);await seedMatureCompanion(profile);
+ const original='model="gpt-existing"\n',login=JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:'DUMMY_ACCESS',id_token:'DUMMY_ID'}});
+ await writeFile(path.join(directory,'config.toml'),original);await writeFile(path.join(directory,'auth.json'),login);
+ const keychain={set:async()=>{},get:async()=> 'dummy',remove:async()=>{}},manager=new CodexAccounts({directory,dataDirectory:profile,keychain,running:async()=>false});await manager.load();
+ const added=await manager.add({name:'Identity test provider',baseUrl:'https://example.com/v1',model:'test-model',apiKey:'dummy'}),id=added.providers[0].id;
+ await writeFile(manager.stateFile,JSON.stringify({...manager.state,preserveDot:false,connectionMode:'api'}));
+ const env={...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:profile,PAWPRINT_TEST_CODEX_HOME:directory};let app,home;
+ const launch=async()=>{app=await electron.launch({args:['.'],env});await app.evaluate(({app})=>{const path=process.getBuiltinModule('path'),req=process.getBuiltinModule('module').createRequire(path.join(app.getAppPath(),'package.json'));req('./electron/codex-accounts.mjs').MacKeychain.prototype.get=async()=> 'dummy';});home=await openCodex(app);};
+ try{
+  await launch();const panel=()=>home.locator('.codex-accounts');
+  await expect(panel().getByRole('switch')).toHaveCount(0);await expect(panel().getByText('保留 Dot 等账号服务',{exact:true})).toHaveCount(0);
+  await expect(panel().getByText('独立 API 模式',{exact:true})).toHaveCount(0);await expect(panel().getByRole('button',{name:'修复 Dot 入口',exact:true})).toHaveCount(0);
+  await panel().getByRole('button',{name:'选用 Identity test provider',exact:true}).click();await expect(panel().locator('.codex-current')).toContainText('Identity test provider');
+  let config=parse(await readFile(path.join(directory,'config.toml'),'utf8')),base=config.openai_base_url;
+  expect(config.model_provider).toBe('openai');expect(config.model_providers[id].requires_openai_auth).toBe(true);expect(config.model_providers[id].auth).toBeUndefined();
+  expect(JSON.parse(await readFile(manager.stateFile,'utf8')).preserveDot).toBeUndefined();
+  await panel().getByRole('button',{name:'刷新状态',exact:true}).click();await expect(panel().getByRole('switch')).toHaveCount(0);
+  await panel().getByText('切换说明',{exact:true}).click();await expect(panel().getByText('默认保留 Dot 等账号入口，实际权限以客户端为准。',{exact:true})).toBeVisible();
+  await app.close();await launch();await expect(panel().getByRole('switch')).toHaveCount(0);await expect(panel().locator('.codex-current')).toContainText('Identity test provider');
+  expect(parse(await readFile(path.join(directory,'config.toml'),'utf8')).openai_base_url).toBe(base);
+  await panel().getByRole('button',{name:'选用 ChatGPT',exact:true}).click();await expect(panel().locator('.codex-current')).toContainText('ChatGPT / OpenAI');
+  config=parse(await readFile(path.join(directory,'config.toml'),'utf8'));expect(config.openai_base_url).toBeUndefined();expect(config.model).toBe('gpt-existing');expect(await readFile(path.join(directory,'auth.json'),'utf8')).toBe(login);
+ }finally{await app?.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('native pet menu and independent Codex Provider form preserve current login',async({},testInfo)=>{
   const root=await mkdtemp(path.join(os.tmpdir(),'paw-account-desktop-')),codexHome=path.join(root,'codex');await mkdir(codexHome);
   await mkdir(path.join(codexHome,'ipc'));const refreshMessages=[],refreshSockets=new Set();
@@ -18,7 +44,8 @@ test('native pet menu and independent Codex Provider form preserve current login
     }});
   });
   await new Promise(resolve=>refreshServer.listen(path.join(codexHome,'ipc','ipc.sock'),resolve));
-  const config='model = "gpt-existing"\napproval_policy = "on-request"\n';await writeFile(path.join(codexHome,'config.toml'),config);await writeFile(path.join(codexHome,'auth.json'),'unchanged-test-login');
+  const login=JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:'DUMMY_ACCESS',id_token:'DUMMY_ID'}});
+  const config='model = "gpt-existing"\napproval_policy = "on-request"\n';await writeFile(path.join(codexHome,'config.toml'),config);await writeFile(path.join(codexHome,'auth.json'),login);
   await seedMatureCompanion(path.join(root,'paw'));
   const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:path.join(root,'paw'),PAWPRINT_TEST_CODEX_HOME:codexHome}});
   let providerId;
@@ -38,6 +65,7 @@ test('native pet menu and independent Codex Provider form preserve current login
     await panel.getByRole('button',{name:'打开通知设置',exact:true}).click();
     expect(await app.evaluate(()=>globalThis.accountNotificationSettings)).toEqual(['x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=studio.binmax.pawprint']);
     expect(await readFile(path.join(codexHome,'config.toml'),'utf8')).toBe(config);
+    await expect(panel.getByRole('switch',{name:'保留 Dot 等账号服务',exact:true})).toHaveCount(0);
     await home.locator('.codex-tabs').getByRole('button',{name:'会话与提醒',exact:true}).click();
     const titleToggle=home.getByRole('switch',{name:'Provider 标题标注',exact:true});
     await expect(titleToggle).toHaveAttribute('aria-checked','true');
@@ -76,7 +104,7 @@ test('native pet menu and independent Codex Provider form preserve current login
     await panel.getByRole('button',{name:'选用 Desktop test provider',exact:true}).click();
     await expect(panel.locator('.codex-current')).toContainText('Desktop test provider · test-model');
     await expect(panel.getByRole('status')).toContainText('已请求客户端刷新左下角');
-    await expect.poll(()=>refreshMessages.length).toBe(1);
+    await expect.poll(()=>refreshMessages.length).toBe(4);
     expect(refreshMessages[0].params.queryKey).toEqual(['user-saved-config','local',null]);
     expect(await app.evaluate(()=>globalThis.accountSwitchNotices)).toEqual([{title:'Codex 默认连接已切换',body:'已选用：Desktop test provider\n已请求刷新客户端标识；已有会话保持原连接。',silent:true}]);
     expect(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().some(w=>w.getTitle()==='Pawprint Connection Notice'))).toBe(false);
@@ -85,11 +113,11 @@ test('native pet menu and independent Codex Provider form preserve current login
       Notification.isSupported=()=>false;
       const entry=globalThis.accountTestMenus.find(({template})=>template.some(i=>i.label==='Desktop test provider · test-model'));entry.menu.items.find(i=>i.label==='Desktop test provider · test-model').click();
     });
-    await expect.poll(()=>refreshMessages.length).toBe(2);
+    await expect.poll(()=>refreshMessages.length).toBe(8);
     expect(await app.evaluate(()=>globalThis.accountSwitchNotices.length)).toBe(1);
     expect(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().some(w=>w.getTitle()==='Pawprint Connection Notice'))).toBe(false);
     await app.evaluate(({Notification})=>{Notification.isSupported=()=>true;});
-    expect(parse(await readFile(path.join(codexHome,'config.toml'),'utf8')).model_provider).toBe(providerId);
+    expect(parse(await readFile(path.join(codexHome,'config.toml'),'utf8')).model_provider).toBe('openai');
     // The client's model picker can change the model while keeping the provider.
     await writeFile(path.join(codexHome,'config.toml'),(await readFile(path.join(codexHome,'config.toml'),'utf8')).replace('model = "test-model"','model = "picked-model"'));
     await panel.getByRole('button',{name:'选用 ChatGPT',exact:true}).click();
@@ -100,17 +128,17 @@ test('native pet menu and independent Codex Provider form preserve current login
     await panel.getByRole('button',{name:'选用 Desktop test provider',exact:true}).click();
     await expect(panel.locator('.codex-current')).toContainText('Desktop test provider · test-model');
     const beforeConflict=await readFile(path.join(codexHome,'config.toml'),'utf8');
-    await writeFile(path.join(codexHome,'config.toml'),beforeConflict.replace('https://example.com/v1','https://changed.example/v1'));
+    await writeFile(path.join(codexHome,'config.toml'),beforeConflict.replace('name = "Desktop test provider"','name = "Changed provider"'));
     await panel.getByRole('button',{name:'选用 ChatGPT',exact:true}).click();
     await expect(panel.locator('.codex-provider').first().getByRole('alert')).toBeVisible();
     await expect(panel.locator('.codex-provider').first().getByRole('alert')).toContainText('连接配置已被外部修改');
     expect((await app.evaluate(()=>globalThis.accountSwitchNotices.at(-1))).title).toBe('Codex 连接切换失败');
-    const conflictPanel=panel.locator('.codex-conflict');await expect(conflictPanel).toContainText('Base URL');await expect(conflictPanel).not.toContainText('https://changed.example/v1');
+    const conflictPanel=panel.locator('.codex-conflict');await expect(conflictPanel).toContainText('连接名称');await expect(conflictPanel).not.toContainText('https://changed.example/v1');
     await conflictPanel.getByRole('button',{name:'处理配置冲突',exact:true}).click();
-    await conflictPanel.getByRole('button',{name:'取消恢复',exact:true}).click();expect(await readFile(path.join(codexHome,'config.toml'),'utf8')).toBe(beforeConflict.replace('https://example.com/v1','https://changed.example/v1'));
+    await conflictPanel.getByRole('button',{name:'取消恢复',exact:true}).click();expect(await readFile(path.join(codexHome,'config.toml'),'utf8')).toBe(beforeConflict.replace('name = "Desktop test provider"','name = "Changed provider"'));
     await conflictPanel.getByRole('button',{name:'处理配置冲突',exact:true}).click();await conflictPanel.getByRole('button',{name:'备份并恢复 ChatGPT',exact:true}).click();
     await expect(conflictPanel).toHaveCount(0);await expect(panel.locator('.codex-current')).toContainText('ChatGPT / OpenAI · gpt-existing');
-    const recovered=(await home.evaluate(()=>window.pawprint.codexAccounts('status'))).data;expect(await readFile(recovered.backupPath,'utf8')).toContain('https://changed.example/v1');
+    const recovered=(await home.evaluate(()=>window.pawprint.codexAccounts('status'))).data;expect(await readFile(recovered.backupPath,'utf8')).toContain('Changed provider');
     await panel.getByRole('button',{name:'选用 Desktop test provider',exact:true}).click();await expect(panel.locator('.codex-current')).toContainText('Desktop test provider · test-model');
 
     for(const socket of refreshSockets)socket.destroy();await new Promise(resolve=>refreshServer.close(resolve));
@@ -128,7 +156,7 @@ test('native pet menu and independent Codex Provider form preserve current login
     await panel.getByRole('button',{name:'确认删除',exact:true}).click();
     await expect(panel.getByRole('button',{name:'选用 Desktop test provider',exact:true})).toHaveCount(0);providerId=null;
     await expect(panel.locator('.codex-current')).toContainText('ChatGPT / OpenAI · gpt-existing');
-    const restored=parse(await readFile(path.join(codexHome,'config.toml'),'utf8'));delete restored.model_providers;expect(restored).toEqual(parse(config));expect(await readFile(path.join(codexHome,'auth.json'),'utf8')).toBe('unchanged-test-login');expect(errors).toEqual([]);
+    const restored=parse(await readFile(path.join(codexHome,'config.toml'),'utf8'));delete restored.model_providers;expect(restored).toEqual(parse(config));expect(await readFile(path.join(codexHome,'auth.json'),'utf8')).toBe(login);expect(errors).toEqual([]);
   } finally {
     for(const socket of refreshSockets)socket.destroy();if(refreshServer.listening)await new Promise(resolve=>refreshServer.close(resolve));
     if(providerId){const {MacKeychain}=await import('../electron/codex-accounts.mjs');await new MacKeychain().remove(providerId);}
@@ -167,19 +195,4 @@ test('Codex hub groups provider tokens, keeps unknown prices explicit and hides 
   await home.locator('.codex-tabs').getByRole('button',{name:'高级设置',exact:true}).click();await expect(home.getByText(path.join(codex,'config.toml'),{exact:true})).not.toBeVisible();
   await home.getByText('查看本机路径',{exact:true}).first().click();await expect(home.getByText(path.join(codex,'config.toml'),{exact:true})).toBeVisible();
  }finally{await app.close();await rm(root,{recursive:true,force:true});}
-});
-
-test('startup upgrades tracked connections to preserve ChatGPT identity and reuses the bridge after restart',async()=>{
- const root=await mkdtemp(path.join(os.tmpdir(),'paw-identity-desktop-')),directory=path.join(root,'codex'),profile=path.join(root,'paw');await mkdir(directory);await seedMatureCompanion(profile);
- await writeFile(path.join(directory,'config.toml'),'model="gpt-existing"\n');
- const keychain={set:async()=>{},get:async()=> 'dummy',remove:async()=>{}},manager=new CodexAccounts({directory,dataDirectory:profile,keychain,running:async()=>false});await manager.load();const added=await manager.add({name:'Identity test provider',baseUrl:'https://example.com/v1',model:'test-model',apiKey:'dummy'});await manager.switch(added.providers[0].id);await manager.switch('openai');
- const login=JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:'DUMMY_ACCESS',id_token:'DUMMY_ID'}});await writeFile(path.join(directory,'auth.json'),login);
- const env={...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:profile,PAWPRINT_TEST_CODEX_HOME:directory};let app;
- try{
-  app=await electron.launch({args:['.'],env});let home=await openCodex(app);await expect(home.getByText('保留 ChatGPT 账号身份',{exact:true})).toBeVisible();await expect(home.getByText('客户端“使用情况”显示 ChatGPT 账号额度；第三方用量请在“用量与额度”中按 Provider 查看。',{exact:true})).toBeVisible();
-  const config=await readFile(path.join(directory,'config.toml'),'utf8'),provider=parse(config).model_providers[added.providers[0].id];expect(provider.requires_openai_auth).toBe(true);expect(provider.auth).toBeUndefined();expect(provider.base_url).toMatch(/^http:\/\/127\.0\.0\.1:/);expect(await readFile(path.join(directory,'auth.json'),'utf8')).toBe(login);
-  const response=await fetch(provider.base_url+'/not-an-api');expect(response.status).toBe(404);await response.text();
-  await app.close();app=await electron.launch({args:['.'],env});home=await openCodex(app);await expect(home.getByText('保留 ChatGPT 账号身份',{exact:true})).toBeVisible();expect(await readFile(path.join(directory,'config.toml'),'utf8')).toBe(config);expect(await readFile(path.join(directory,'auth.json'),'utf8')).toBe(login);
-  const restarted=await fetch(provider.base_url+'/not-an-api');expect(restarted.status).toBe(404);await restarted.text();
- }finally{await app?.close();await rm(root,{recursive:true,force:true});}
 });

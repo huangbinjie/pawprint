@@ -6,6 +6,7 @@ import {mkdtemp,writeFile,rm,readFile,copyFile,chmod} from 'node:fs/promises';
 import os from 'node:os';import path from 'node:path';import http from 'node:http';
 import assert from 'node:assert/strict';
 import {CodexAccounts,MacKeychain} from '../electron/codex-accounts.mjs';
+import {CodexIdentityBridge} from '../electron/codex-identity-bridge.mjs';
 const realChatGPT=process.argv.includes('--chatgpt');
 const originalHome=process.env.CODEX_HOME || path.join(os.homedir(),'.codex');
 const root=await mkdtemp(path.join(os.tmpdir(),'paw-live-switch-'));
@@ -13,6 +14,8 @@ const bin=execFileSync('/bin/zsh',['-lc','command -v codex'],{encoding:'utf8'}).
 const records=[],notifications=[];const pending=new Map();let child,buffer='',sequence=0;
 const summary={version:execFileSync(bin,['--version'],{encoding:'utf8'}).trim(),desktopUI:'not verified: Computer Use denies com.openai.codex'};
 const keychain=new MacKeychain();let providerIds=[];
+let bridge;
+const dummyLogin=JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:'dummy-chatgpt-login',id_token:'dummy-identity'}});
 const server=http.createServer((req,res)=>{
  let body='';req.on('data',b=>body+=b);req.on('end',()=>{
   let request={};try{request=JSON.parse(body)}catch{}
@@ -27,24 +30,31 @@ const server=http.createServer((req,res)=>{
   res.end();
  });
 });
+server.on('upgrade',(_,socket)=>socket.end('HTTP/1.1 426 Upgrade Required\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'));
 function call(method,params={}){return new Promise((resolve,reject)=>{const id=++sequence;const timer=setTimeout(()=>{pending.delete(id);reject(Error('Timed out: '+method));},15000);pending.set(id,{resolve,reject,timer});child.stdin.write(JSON.stringify({id,method,params})+'\n');});}
 async function waitTurn(threadId,from){const start=Date.now();while(Date.now()-start<45000){const messages=notifications.slice(from).filter(n=>n.params?.threadId===threadId);const done=messages.find(n=>n.method==='turn/completed');if(done){assert.equal(done.params.turn.status,'completed',JSON.stringify(done.params.turn.error));return messages.filter(n=>n.method==='item/agentMessage/delta').map(n=>n.params.delta).join('') || messages.filter(n=>n.method==='item/completed' && n.params.item?.type==='agentMessage').map(n=>n.params.item.text).join('');}await new Promise(r=>setTimeout(r,100));}throw Error('Timed out waiting for completed turn');}
 async function turn(thread){const from=notifications.length;await call('turn/start',{threadId:thread.thread.id,input:[{type:'text',text:realChatGPT&&thread.modelProvider==='openai'?'Reply with exactly PAWPRINT_CHATGPT_OK. Do not use tools.':'Reply with PAWPRINT_MOCK_OK. Do not use tools.'}]});return waitTurn(thread.thread.id,from);}
 try {
  await server.listen(0,'127.0.0.1');if(!server.listening)await new Promise(r=>server.once('listening',r));
- await writeFile(path.join(root,'config.toml'),'model = "gpt-6.1-sol"\nmodel_provider = "openai"\ncli_auth_credentials_store = "file"\n[analytics]\nenabled = false\n',{mode:0o600});
+ await writeFile(path.join(root,'config.toml'),'model = "gpt-6.1-sol"\nmodel_provider = "openai"\ncli_auth_credentials_store = "file"\n'+(realChatGPT?'':`openai_base_url="http://127.0.0.1:${server.address().port}/official/v1"\nchatgpt_base_url="http://127.0.0.1:${server.address().port}/backend-api"\n`)+ '[features]\napps=false\nplugins=false\n[analytics]\nenabled = false\n',{mode:0o600});
  if(realChatGPT){await copyFile(path.join(originalHome,'auth.json'),path.join(root,'auth.json'));await chmod(path.join(root,'auth.json'),0o600);}
- const manager=new CodexAccounts({directory:root,dataDirectory:path.join(root,'paw'),keychain,running:async()=>!!child});await manager.load();
+ else await writeFile(path.join(root,'auth.json'),dummyLogin,{mode:0o600});
+ bridge=new CodexIdentityBridge({dataDirectory:path.join(root,'paw'),keychain});
+ const manager=new CodexAccounts({directory:root,dataDirectory:path.join(root,'paw'),keychain,identityBridge:bridge,running:async()=>!!child});await manager.load();
+ // Exercise native routing with a dummy API login; the manager separately
+ // verifies a recognized ChatGPT fixture without copying any real credentials.
+ const select=async id=>{if(!realChatGPT)await writeFile(path.join(root,'auth.json'),dummyLogin);await manager.switch(id);if(!realChatGPT)await writeFile(path.join(root,'auth.json'),JSON.stringify({auth_mode:'apikey',OPENAI_API_KEY:'dummy-client-key'}));};
  for(const suffix of ['a','b']){const status=await manager.add({name:'Pawprint Live '+suffix,baseUrl:`http://127.0.0.1:${server.address().port}/v1`,model:'paw-model-'+suffix,apiKey:'dummy-pawprint-live-test'});providerIds.push(status.providers.at(-1).id);}
+ if(!realChatGPT)await writeFile(path.join(root,'auth.json'),JSON.stringify({auth_mode:'apikey',OPENAI_API_KEY:'dummy-client-key'}));
  const env={...process.env,CODEX_HOME:root};delete env.OPENAI_API_KEY;delete env.OPENAI_BASE_URL;
  child=spawn(bin,['app-server','--stdio'],{env,stdio:['pipe','pipe','pipe']});child.stderr.resume();
  child.stdout.on('data',chunk=>{buffer+=chunk;let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);let m;try{m=JSON.parse(line)}catch{continue}if(m.id!==undefined&&pending.has(m.id)){const p=pending.get(m.id);pending.delete(m.id);clearTimeout(p.timer);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}else notifications.push(m);}});
  await call('initialize',{clientInfo:{name:'pawprint_live_switch_test',version:'2'},capabilities:{experimentalApi:true}});child.stdin.write(JSON.stringify({method:'initialized'})+'\n');
  const pid=child.pid;
  summary.initialProvider=(await call('config/read')).config.model_provider;
- await manager.switch(providerIds[0]);const a=await call('thread/start',{cwd:root});assert.equal(a.modelProvider,providerIds[0]);assert.equal(a.model,'paw-model-a');assert.match(await turn(a),/PAWPRINT_MOCK_OK/);
- await manager.switch(providerIds[1]);const b=await call('thread/start',{cwd:root});assert.equal(b.modelProvider,providerIds[1]);assert.equal(b.model,'paw-model-b');assert.match(await turn(b),/PAWPRINT_MOCK_OK/);
- await manager.switch('openai');const restored=await call('thread/start',{cwd:root});assert.equal(restored.modelProvider,'openai');assert.equal(restored.model,'gpt-6.1-sol');
+ await select(providerIds[0]);const a=await call('thread/start',{cwd:root});assert.equal(a.modelProvider,'openai');assert.equal(a.model,'paw-model-a');assert.match(await turn(a),/PAWPRINT_MOCK_OK/);
+ await select(providerIds[1]);const b=await call('thread/start',{cwd:root});assert.equal(b.modelProvider,'openai');assert.equal(b.model,'paw-model-b');assert.match(await turn(b),/PAWPRINT_MOCK_OK/);
+ await select('openai');const restored=await call('thread/start',{cwd:root});assert.equal(restored.modelProvider,'openai');assert.equal(restored.model,'gpt-6.1-sol');
  // An existing provider A chat must continue to work after switching defaults back.
  assert.match(await turn(a),/PAWPRINT_MOCK_OK/);
  await call('thread/name/set',{threadId:a.thread.id,name:'Provider A title'});
@@ -65,6 +75,7 @@ try {
 finally {
  for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('Test cleanup'));}pending.clear();
  if(child){const c=child;await new Promise(r=>{c.once('exit',r);c.kill();setTimeout(()=>{c.kill('SIGKILL');r();},2000).unref();});}
+ await bridge?.close();
  for(const id of providerIds)await keychain.remove(id);
  await new Promise(r=>server.close(r));await rm(root,{recursive:true,force:true});
 }

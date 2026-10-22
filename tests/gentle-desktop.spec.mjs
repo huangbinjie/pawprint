@@ -3,6 +3,40 @@ import {mkdtemp,writeFile} from 'node:fs/promises';
 import path from 'node:path';import os from 'node:os';
 import {seedMatureCompanion} from './fixtures/game.mjs';import {openHome} from './helpers.mjs';
 import {TRAITS,phenotype,geneOdds,formatChance} from '../core/genetics.mjs';
+
+test('baseline SVG motion advances at a bounded rate and preserves reduced motion and performances',async()=>{
+ const dir=await mkdtemp(path.join(os.tmpdir(),'pawprint-motion-clock-'));
+ const state=await seedMatureCompanion(dir);
+ const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:dir,PAWPRINT_TEST_LAN:'1',PAWPRINT_TEST_CODEX_HOME:path.join(dir,'codex')}});
+ try{
+  const floating=await app.firstWindow();
+  const errors=[];floating.on('pageerror',error=>errors.push(error.message));
+  await expect(floating.locator('.cat')).toBeVisible();
+  const baselinePaused=()=>floating.evaluate(()=>{
+   const animations=document.querySelector('.cat').getAnimations({subtree:true});
+   return animations.length>0&&animations.every(a=>a.playState==='paused');
+  });
+  await expect.poll(baselinePaused).toBe(true);
+  const session=await floating.context().newCDPSession(floating);
+  await session.send('Performance.enable');
+  const metrics=async()=>Object.fromEntries((await session.send('Performance.getMetrics')).metrics.map(m=>[m.name,m.value]));
+  const bodyTime=()=>floating.locator('.cat-body').evaluate(el=>el.getAnimations()[0].currentTime);
+  const before=await metrics(),timeBefore=await bodyTime();
+  await floating.waitForTimeout(2200);
+  const after=await metrics(),elapsed=(await bodyTime())-timeBefore;
+  expect(after.LayoutCount-before.LayoutCount).toBeLessThan(90);
+  expect(elapsed).toBeGreaterThan(1950);expect(elapsed).toBeLessThan(3000);
+  await floating.emulateMedia({reducedMotion:'reduce'});
+  await expect.poll(()=>floating.locator('.cat').evaluate(el=>el.getAnimations({subtree:true}).length)).toBe(0);
+  await floating.emulateMedia({reducedMotion:'no-preference'});
+  await expect.poll(baselinePaused).toBe(true);
+  const response=await floating.evaluate(id=>window.pawprint.perform(id),state.pets[0].id);
+  expect(response.ok).toBe(true);
+  await expect.poll(()=>floating.locator('.cat-body').evaluate(el=>el.getAnimations().some(a=>a.playState==='running'&&a.effect.getTiming().iterations!==Infinity))).toBe(true);
+  expect(errors).toEqual([]);
+ }finally{await app.close();}
+});
+
 test('gentle portrait hides complete absent parts, preserves extreme genes and adapts tailless skills',async({},info)=>{
  const dir=await mkdtemp(path.join(os.tmpdir(),'pawprint-gentle-'));const state=await seedMatureCompanion(dir);
  const combos=[{ears:1,tail:1,eyeSize:1,white:1},{ears:7,tail:7,fur:3,body:8,face:7},{ears:7,tail:4,body:2,face:4,eyeSize:3},{ears:2,tail:7,body:5,face:2,eyeSize:4},{ears:5,tail:2,eyes:8,eyeSize:5}];

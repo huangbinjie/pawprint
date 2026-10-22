@@ -17,16 +17,17 @@ async function fixture(t,handle){
   t.after(async()=>{for(const s of sockets)s.destroy();await new Promise(r=>server.close(r));await rm(directory,{recursive:true,force:true});});
   return {directory,socketPath,seen};
 }
-test('framed IPC refreshes only the local provider menu cache without login, prompts or acknowledgements',unix,async t=>{
+test('framed IPC refreshes local account and Dot config dependencies without login or prompts',unix,async t=>{
   const f=await fixture(t,(socket,m)=>{if(m.method==='initialize'){
     socket.write(frame({type:'response',method:'initialize',requestId:'unrelated',resultType:'success',result:{clientId:'wrong'}}));
     const reply=frame({type:'response',method:'initialize',requestId:m.requestId,resultType:'success',result:{clientId:'refresh-test'}});
     socket.write(reply.subarray(0,2));socket.write(reply.subarray(2));
   }});
   assert.deepEqual(await refreshCodexProviderIndicator(f),{status:'requested'});
-  for(let i=0;i<30&&f.seen.length<2;i++)await new Promise(r=>setTimeout(r,10));
-  assert.equal(f.seen.length,2);assert.equal(f.seen[0].method,'initialize');
+  for(let i=0;i<30&&f.seen.length<5;i++)await new Promise(r=>setTimeout(r,10));
+  assert.equal(f.seen.length,5);assert.equal(f.seen[0].method,'initialize');
   assert.deepEqual(f.seen[1],{type:'broadcast',method:'query-cache-invalidate',version:0,sourceClientId:'refresh-test',params:{queryKey:['user-saved-config','local',null]}});
+  assert.deepEqual(f.seen.slice(2).map(m=>m.params.queryKey),[['config','read-response','local',null],['config','layered-response','local',null],['config','effective','local',null]]);
   assert.ok(!JSON.stringify(f.seen).includes('account/login'));assert.ok(!JSON.stringify(f.seen).includes('turn/start'));
 });
 test('unavailable, incompatible and malformed IPC never reports a refreshed indicator',unix,async t=>{

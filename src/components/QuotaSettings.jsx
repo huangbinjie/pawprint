@@ -4,7 +4,7 @@ import { currentLanguage } from "../i18n/locale.js";
 export default function QuotaSettings({ state, now, working, onCommand, onRefresh, onRecover }) {
   const enabled = state.settings.quotaEnabled === true;
   const window = state.settings.quotaWindow || "weekly";
-  const view = quotaPresentation(state.quota, window, now, currentLanguage());
+  const view = quotaPresentation(state.quota, window, now, currentLanguage(),state.codexConnection);
   return <section className="card settings-card">
     <h3>菜单栏额度</h3>
     <div className="setting-row"><div><strong>菜单栏图标不见了？</strong>
@@ -16,7 +16,7 @@ export default function QuotaSettings({ state, now, working, onCommand, onRefres
         className={`toggle ${state.settings.trayCompact ? "on" : ""}`} disabled={working}
         onClick={() => onCommand({ type: "tray-compact", value: !state.settings.trayCompact })}><span /></button>
     </div>}
-    <div className="setting-row"><div><strong>{state.platform === "win32" ? "托盘菜单显示剩余额度" : "图标旁显示剩余额度"}</strong><p>W 表示周剩余，5h 表示 5 小时剩余。按本机 Codex 记录中的额度计算，不用 token 数量估算。</p></div>
+    <div className="setting-row"><div><strong>{state.platform === "win32" ? "托盘菜单显示剩余额度" : "图标旁显示剩余额度"}</strong><p>W 表示周剩余，5h 表示 5 小时剩余。按本机 Codex 记录中的额度计算，不用 token 数量估算。</p><p>选用第三方 Provider 时显示服务名，切回 ChatGPT / OpenAI 后显示额度。</p></div>
       <button role="switch" aria-label="图标旁显示剩余额度" aria-checked={enabled} className={`toggle ${enabled ? "on" : ""}`} disabled={working}
         onClick={() => onCommand({ type: "quota-settings", enabled: !enabled, window })}><span /></button>
     </div>
@@ -27,8 +27,8 @@ export default function QuotaSettings({ state, now, working, onCommand, onRefres
       </select>
     </div>
     {enabled && <div className="quota-preview" data-testid="quota-preview"><strong>{view.title}</strong>
-      <p>{view.values.weekly.detail} · {view.values.session.detail}</p><small>{view.source}</small>
-      {state.quota?.error && <p role="status">{state.quota.error}</p>}
+      {view.kind!=='provider'&&<p>{view.values.weekly.detail} · {view.values.session.detail}</p>}<small>{view.source}</small>
+      {view.kind!=='provider'&&state.quota?.error && <p role="status">{state.quota.error}</p>}
     </div>}
     <div className="setting-row"><div><strong>来自本机最近活动的 Codex 记录</strong><p>每 15 秒重新读取，不访问登录凭据、浏览器 Cookie 或钥匙串。不是实时账号查询；切换账号后需等待新记录，其他设备的后续用量可能尚未反映。</p><p>超过 15 分钟的记录用 ~ 标记。跨过重置时间后显示待更新，继续使用 Codex 才会产生新快照。</p></div>
       <button className="button secondary" disabled={!enabled || state.quota?.loading} onClick={onRefresh}>{state.quota?.loading ? "读取中…" : "重新读取"}</button>

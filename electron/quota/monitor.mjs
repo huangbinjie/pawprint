@@ -7,14 +7,15 @@ export class QuotaMonitor {
   }
   snapshot() { return this.value; }
   publish(patch) { this.value = { ...this.value, ...patch }; this.onChange(); }
-  async configure({ directory, enabled }) {
-    const signature = JSON.stringify([directory, !!enabled]);
+  async configure({ directory, dataDirectory, enabled }) {
+    const signature = JSON.stringify([directory, dataDirectory, !!enabled]);
     if (signature === this.signature) return;
     this.signature = signature;
     const generation = ++this.generation; clearInterval(this.timer);
     await this.worker?.terminate(); await this.pending;
     if (generation !== this.generation) return;
     this.directory = directory;
+    this.dataDirectory = dataDirectory;
     this.publish({ enabled: !!enabled, loading: false, data: null, error: null });
     if (!enabled) return;
     await this.refresh();
@@ -30,7 +31,7 @@ export class QuotaMonitor {
     this.pending = new Promise(resolve => {
       const worker = new Worker(new URL("./worker.mjs", import.meta.url), {
         execArgv: [], resourceLimits: { maxOldGenerationSizeMb: 96 },
-        workerData: { directory: this.directory, now: Date.now() },
+        workerData: { directory: this.directory, dataDirectory:this.dataDirectory, now: Date.now() },
       });
       this.worker = worker;
       let finished = false;

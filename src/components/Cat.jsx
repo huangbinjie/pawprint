@@ -1,5 +1,6 @@
-import React, { useId } from "react";
+import React, { useEffect, useId, useRef } from "react";
 import { phenotype, TRAITS } from "../../core/genetics.mjs";
+import { trackCatMotion } from "../cat-motion.js";
 export default function Cat({
   genome,
   className = "",
@@ -10,6 +11,8 @@ export default function Cat({
   talentLevel = 1,
   skillId = null,
 }) {
+  const root = useRef(null);
+  useEffect(() => trackCatMotion(root.current), []);
   const uid = useId().replaceAll(":", ""),
     p = phenotype(genome),
     coat = TRAITS.coat[p.coat],
@@ -174,6 +177,7 @@ export default function Cat({
   ];
   return (
     <svg
+      ref={root}
       role="img"
       aria-label={label}
       viewBox="0 -25 310 335"
