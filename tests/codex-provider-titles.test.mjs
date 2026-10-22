@@ -45,20 +45,22 @@ test('native OpenAI-labelled chats are marked only after an observed third-party
 });
 test('a title created after route discovery is prefixed through index events before the polling interval', {timeout:4000},async t=>{
  const dir=await directory(t),db=new DatabaseSync(path.join(dir,'state_5.sqlite'));
- t.after(()=>db.close());
+ let service;
+ try{
  db.exec('CREATE TABLE threads(id TEXT,model_provider TEXT,name TEXT,cwd TEXT,updated_at INTEGER,archived INTEGER,source TEXT)');db.prepare('INSERT INTO threads VALUES(?,?,?,?,?,?,?)').run(id,'openai',null,dir,1,0,'cli');
  const providerId='pawprint_'+'a'.repeat(32);await new CodexRouteEvidence(dir).record({threadId:id,providerId,model:'test-model'});
  await writeFile(path.join(dir,'config.toml'),`[model_providers.${providerId}]\nname="Fast gateway"\n`);
  let finished;const renamed=new Promise(r=>finished=r);
- const service=new CodexProviderTitles({directory:dir,dataDirectory:dir,clientFactory:async()=>({request:async(method,p)=>{
+ service=new CodexProviderTitles({directory:dir,dataDirectory:dir,clientFactory:async()=>({request:async(method,p)=>{
   if(method==='thread/read')return {thread:{id,modelProvider:'openai'}};
   db.prepare('UPDATE threads SET name=? WHERE id=?').run(p.name,id);finished(p.name);return {};
- },close:async()=>{}})});t.after(()=>service.close());service.start();service.watcher.ref();await service.refresh();
+ },close:async()=>{}})});service.start();service.watcher.ref();await service.refresh();
  assert.deepEqual(await readProviderTitleCandidates(dir,dir),[]);
  db.prepare('UPDATE threads SET name=? WHERE id=?').run('Early title',id);
  await writeFile(path.join(dir,'session_index.jsonl'),JSON.stringify({id,thread_name:'Early title',updated_at:new Date().toISOString()})+'\n');
  assert.equal(await renamed,'[Fast gateway] Early title');await service.close();
  const before=service.snapshot().updated;await writeFile(path.join(dir,'session_index.jsonl'),'');assert.equal(service.snapshot().updated,before);
+ }finally{await service?.close();db.close();}
 });
 test('a refresh event during an active scan is drained instead of waiting for the next poll',async t=>{
  const dir=await directory(t);await writeFile(path.join(dir,'config.toml'),'');let reads=0,release;
