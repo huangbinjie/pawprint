@@ -30,6 +30,7 @@ jobs:
           $version = node -p 'require("./package.json").version'
           if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag does not match app version' }
       - run: npm test
+        timeout-minutes: 5
       - run: npm run package:win
       - name: Smoke test packaged Windows app
         run: npx playwright test tests/windows-desktop.spec.mjs

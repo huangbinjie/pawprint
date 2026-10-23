@@ -2,7 +2,7 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
-## 0.15.3 — 2026-10-23
+## 0.15.4 — 2026-10-23
 
 - macOS 会话持久绑定服务，切换默认 Provider 只影响新会话；重载、重启后保持绑定，删除原连接后明确报错。
 - 显示新会话默认服务与会话绑定来源；回到官方请求后恢复 Pawprint 自己标注的标题，保留手动标题。
@@ -14,7 +14,7 @@ Release notes for published Pawprint builds. Builds are available for Apple sili
 - Include a manual, backed-up macOS menu-bar association repair tool; it does not reset the layout or restart Pawprint/Codex.
 - 升级后官方与第三方请求都需本机路由，请保持 Pawprint 运行；无转发记录的旧会话迁移到官方 GPT。
 
-完整中英文说明 / Full bilingual notes: [v0.15.3](docs/releases/v0.15.3.md).
+完整中英文说明 / Full bilingual notes: [v0.15.4](docs/releases/v0.15.4.md).
 
 ## 0.15.2 — 2026-10-23
 

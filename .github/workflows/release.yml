@@ -26,6 +26,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: test "$GITHUB_REF_NAME" = "v$(node -p 'require("./package.json").version')"
       - run: npm test
+        timeout-minutes: 5
       - name: Test macOS menu-bar association repair
         run: python3 -m unittest discover -s tests -p test_macos_menubar_association.py
       - name: Select signing mode

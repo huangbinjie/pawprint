@@ -19,8 +19,9 @@ async function setup(t,respond){
  // below use the production default and verify fail-closed initialization.
  const bridge=new CodexIdentityBridge({dataDirectory:directory,keychain,requireBindings:false});
  const provider={id,name:'Local test provider',model:'test-model',modelSelection:'fixed',baseUrl:`http://127.0.0.1:${upstream.address().port}/v1`};bridge.configure([provider]);await bridge.start();
- t.after(async()=>{await bridge.close();upstream.closeAllConnections();await new Promise(r=>upstream.close(r));await rm(directory,{recursive:true,force:true});});
- return {directory,seen,bridge,provider,keychain};
+ const bridges=[bridge];
+ t.after(async()=>{for(const instance of [...bridges].reverse())await instance.close();upstream.closeAllConnections();await new Promise(r=>upstream.close(r));await rm(directory,{recursive:true,force:true});});
+ return {directory,seen,bridge,bridges,provider,keychain};
 }
 function postRaw(url,headers,body){return new Promise((resolve,reject)=>{const req=http.request(url,{method:'POST',headers},res=>{const chunks=[];res.on('data',b=>chunks.push(b));res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,body:Buffer.concat(chunks)}));res.on('error',reject);});req.on('error',reject);req.end(body);});}
 test('additional-tools and future protocol headers survive without individual allowlisting',async t=>{
@@ -181,7 +182,7 @@ test('unknown routes, websites and removed providers cannot use the bridge',asyn
 test('bridge address survives Pawprint restarts and an occupied port is never silently replaced',async t=>{
  const f=await setup(t),url=f.bridge.baseUrl(id);
  const occupied=new CodexIdentityBridge({dataDirectory:f.directory,keychain:f.keychain});await assert.rejects(occupied.start(),/未能启动/);
- await f.bridge.close();const restarted=new CodexIdentityBridge({dataDirectory:f.directory,keychain:f.keychain,requireBindings:false});t.after(()=>restarted.close());restarted.configure([f.provider]);await restarted.start();assert.equal(restarted.baseUrl(id),url);
+ await f.bridge.close();const restarted=new CodexIdentityBridge({dataDirectory:f.directory,keychain:f.keychain,requireBindings:false});f.bridges.push(restarted);restarted.configure([f.provider]);await restarted.start();assert.equal(restarted.baseUrl(id),url);
  const r=await fetch(url+'/responses',{method:'POST',body:'{}'});assert.equal(r.status,200);await r.text();
 });
 test('redirects and credential errors do not leak keys or follow an unapproved destination',async t=>{
@@ -204,7 +205,7 @@ test('bound services survive bridge restart and route through either default URL
  assert.equal(await send(f.bridge,id,officialThread),200);assert.equal(f.seen.at(-1).path,'/official/v1/responses');assert.equal(f.seen.at(-1).headers.authorization,'Bearer PRIVATE_NATIVE_LOGIN');assert.equal(f.seen.at(-1).headers['chatgpt-account-id'],'PRIVATE_ACCOUNT');assert.equal(f.seen.at(-1).headers['x-openai-workspace-id'],'PRIVATE_WORKSPACE');assert.equal(f.seen.at(-1).headers.cookie,undefined);assert.equal(JSON.parse(f.seen.at(-1).body).model,'gpt-picker');
  assert.equal(await send(f.bridge,id,vendorThread),200);assert.equal(f.seen.at(-1).headers.authorization,'Bearer THIRD_PARTY_KEY');assert.equal(f.seen.at(-1).headers['chatgpt-account-id'],undefined);
  await f.bridge.close();
- const restarted=new CodexIdentityBridge({dataDirectory:f.directory,keychain:f.keychain});t.after(()=>restarted.close());restarted.configure([f.provider],options);await restarted.start();await restarted.prepareBindings({directory:f.directory,currentProviderId:'openai'});
+ const restarted=new CodexIdentityBridge({dataDirectory:f.directory,keychain:f.keychain});f.bridges.push(restarted);restarted.configure([f.provider],options);await restarted.start();await restarted.prepareBindings({directory:f.directory,currentProviderId:'openai'});
  assert.equal(await send(restarted,'openai',vendorThread),200);assert.equal(f.seen.at(-1).path,'/v1/responses');assert.equal(JSON.parse(f.seen.at(-1).body).model,'test-model');assert.ok(!JSON.stringify(f.seen.at(-1).headers).includes('PRIVATE_'));
  assert.equal(await send(restarted,id,officialThread,'responses/compact'),200);assert.equal(f.seen.at(-1).path,'/official/v1/responses/compact');
  restarted.configure([],options);const count=f.seen.length;assert.equal(await send(restarted,'openai',vendorThread),410);assert.equal(f.seen.length,count);

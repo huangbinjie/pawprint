@@ -1,6 +1,6 @@
 {
   "name": "pawprint-desktop",
-  "version": "0.15.3",
+  "version": "0.15.4",
   "private": true,
   "repository": "https://github.com/huangbinjie/pawprint",
   "homepage": "https://huangbinjie.github.io/pawprint/",
@@ -11,7 +11,7 @@
     "dev": "node scripts/icon.mjs && node scripts/dev.mjs",
     "start": "electron .",
     "build": "node scripts/icon.mjs && vite build",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test --test-timeout=60000 tests/*.test.mjs",
     "test:ui": "playwright test",
     "package": "npm run build && electron-builder --mac dir --publish never",
     "package:local": "npm run build && electron-builder --mac dir --arm64 --config.mac.identity=- --config.mac.notarize=false --config.mac.hardenedRuntime=false --publish never",
