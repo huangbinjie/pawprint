@@ -7,7 +7,8 @@ import {pipeline} from 'node:stream/promises';
 import {promisify} from 'node:util';
 import {zstdDecompress,gunzip,inflate,brotliDecompress} from 'node:zlib';
 import {parse} from 'smol-toml';
-import {CodexRouteEvidence} from './codex-route-evidence.mjs';
+import {CodexRouteEvidence,nativeTurnId} from './codex-route-evidence.mjs';
+import {proxyHeaders,requestProvider} from './codex-proxy-http.mjs';
 
 const maxRequestBytes=32*1024*1024;
 const decoders=new Map([['zstd',zstdDecompress],['gzip',gunzip],['deflate',inflate],['br',brotliDecompress]].map(([name,decode])=>[name,promisify(decode)]));
@@ -26,7 +27,7 @@ export async function hasFileChatGPTLogin(directory) {
 // A loopback-only inference bridge separates ChatGPT identity from provider
 // authentication. Incoming credentials/identity headers are never forwarded.
 export class CodexIdentityBridge {
-  constructor({dataDirectory,keychain,fetchImpl=fetch,onRoute=()=>{}}) {
+  constructor({dataDirectory,keychain,fetchImpl=requestProvider,onRoute=()=>{}}) {
     Object.assign(this,{dataDirectory,keychain,fetchImpl});this.file=path.join(dataDirectory,'codex-identity-bridge.json');this.providers=new Map();this.requests=new Set();
     this.routeEvidence=new CodexRouteEvidence(dataDirectory);this.onRoute=onRoute;
   }
@@ -79,11 +80,20 @@ export class CodexIdentityBridge {
       }
       if(controller.signal.aborted)return;
       let request;try{request=JSON.parse(body);}catch{this.error(res,400,'Invalid JSON request');return;}
+      if(!request||typeof request!=='object'||Array.isArray(request)){this.error(res,400,'Invalid JSON request');return;}
       const provider=this.providers.get(match[2]);if(!provider){this.error(res,404,'Connection removed');return;}
+      if(typeof provider.model!=='string'||!provider.model.trim()){this.error(res,502,'Connection model is not configured');return;}
+      // Only models absent from the native list are pinned. Known models keep
+      // the picker's choice, including background titles and compaction.
+      // A failed list read must not silently lock an existing GPT connection.
+      if(provider.modelSelection==='fixed'&&request.model!==provider.model){request.model=provider.model;body=Buffer.from(JSON.stringify(request));}
       const key=await this.keychain.get(provider.id);
+      const headers=proxyHeaders(req.headers,{request:true});
+      headers['content-type']||='application/json';headers.accept||=match[3].endsWith('/compact')?'application/json':'text/event-stream';
+      headers.authorization=`Bearer ${key}`;headers['content-length']=String(body.length);
       const upstreamRequest=this.fetchImpl(provider.baseUrl.replace(/\/$/,'')+'/'+match[3],{
         method:'POST',body,redirect:'manual',signal:controller.signal,
-        headers:{'Content-Type':'application/json','Accept':'text/event-stream','Authorization':`Bearer ${key}`},
+        headers,
       });
       // The attempted destination is known once dispatched, including when the
       // service later fails. Do not wait for response headers or the whole turn.
@@ -91,8 +101,11 @@ export class CodexIdentityBridge {
       const upstream=await upstreamRequest;
       clearTimeout(timeout);
       if(upstream.status>=300&&upstream.status<400){await upstream.body?.cancel();this.error(res,502,'Provider redirects are not supported');return;}
-      res.writeHead(upstream.status,{'Content-Type':upstream.headers.get('content-type')||'application/json','Cache-Control':'no-store'});
+      const responseHeaders=proxyHeaders(upstream.headers);
+      responseHeaders['content-type']||='application/json';responseHeaders['cache-control']='no-store';
+      res.writeHead(upstream.status,responseHeaders);
       if(upstream.body)await pipeline(Readable.fromWeb(upstream.body),res);else res.end();
+      if(match[3]==='responses'&&upstream.status>=200&&upstream.status<300)void this.routeEvidence.recordTurn({threadId:req.headers['thread-id'],turnId:nativeTurnId(req.headers),providerId:provider.id,model:request.model}).catch(()=>{});
     }catch{if(!res.destroyed)this.error(res,502,'Provider request failed. Check the connection and keep Pawprint running.');}
     finally{clearTimeout(timeout);this.requests.delete(controller);req.off('aborted',stop);res.off('close',stop);}
   }

@@ -35,7 +35,7 @@ try{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const origin=`http://127.0.0.1:${server.address().port}`;
  bridge=new CodexIdentityBridge({dataDirectory:path.join(root,'pawprint'),keychain:{get:async()=> 'dummy-provider-key'}});
- bridge.configure([{id:providerId,baseUrl:origin+'/upstream/v1'}]);await bridge.start();
+ bridge.configure([{id:providerId,baseUrl:origin+'/upstream/v1',model:'gpt-6.1-sol',modelSelection:'picker'}]);await bridge.start();
  bridge.server.prependListener('request',req=>incoming.push({method:req.method,encoding:req.headers['content-encoding']??null}));
  await writeFile(path.join(root,'config.toml'),`model="gpt-6.1-sol"\nmodel_provider="openai"\nopenai_base_url="${bridge.baseUrl(providerId)}"\nchatgpt_base_url="${origin}/backend-api"\ncli_auth_credentials_store="file"\n[features]\nenable_request_compression=true\nremote_models=false\napps=false\nplugins=false\n[analytics]\nenabled=false\n`);
  const claims={sub:'dummy-user',exp:Math.floor(Date.now()/1000)+3600,'https://api.openai.com/auth':{chatgpt_account_id:account,chatgpt_user_id:'dummy-user',chatgpt_plan_type:'plus'}};

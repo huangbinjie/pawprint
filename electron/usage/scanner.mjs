@@ -111,9 +111,10 @@ function validCachedData(data) {
 
 export async function parseSession(
   file,
-  { startMs, endMs, deadline = Date.now() + 45000, catalog } = {},
+  { startMs, endMs, deadline = Date.now() + 45000, catalog,turnRoutes={} } = {},
 ) {
   let id = null,
+    threadId = null,
     created = null,
     fork = false,
     boundary = null,
@@ -175,7 +176,7 @@ export async function parseSession(
       sawMeta = true;
       metadataIdentity = identity;
       const key = payload.id ?? payload.session_id;
-      if (typeof key === "string" && key.length <= 180) id = hash(key);
+      if (typeof key === "string" && key.length <= 180) {id = hash(key);threadId=key;}
       created = validTimestamp(payload.timestamp ?? record.timestamp);
       parentId = payload.forked_from_id ?? payload.parent_thread_id ?? null;
       provider = payload.model_provider ?? "openai";
@@ -264,16 +265,20 @@ export async function parseSession(
       ? !same(delta, last)
       : old && total.input >= old.input && total.output >= old.output;
     const signature = hash(`${id}|${turn}|${total.input}|${total.output}`);
-    const usd = estimateCost(model, last, tier, catalog, provider);
-    const reference = estimateReferenceCost(model, last, tier, catalog, provider);
+    const route=turnRoutes[threadId+':'+turn];
+    const actualModel=route?(route.ambiguous?'unknown':canonicalModel(route.model)):model;
+    const actualProvider=route?(route.ambiguous?'unknown':route.providerId):provider;
+    if(route?.ambiguous)issues.add('ambiguous-request-route');
+    const usd = estimateCost(actualModel, last, tier, catalog, actualProvider);
+    const reference = estimateReferenceCost(actualModel, last, tier, catalog, actualProvider);
     rows.push({
       id: signature,
       at: timestamp,
       date: dayKey(timestamp),
-      model,
+      model:actualModel,
       tokens: last.total,
       counts: last,
-      provider,
+      provider:actualProvider,
       usd,
       referenceUSD:reference?.usd ?? null,
       referenceSource:reference?.source ?? null,
@@ -286,7 +291,7 @@ export async function parseSession(
       break;
     }
   }
-  return { rows, issues: [...issues], complete: !malformed };
+  return { rows, issues: [...issues], complete: !malformed,threadHash:id };
 }
 async function discover(root, startMs, deadline) {
   const found = [],
@@ -354,6 +359,7 @@ export async function scanUsage({
   catalog,
   pricingVersion = PRICING_VERSION,
   pricingStatus = null,
+  turnRoutes = {},
 }) {
   const started = Date.now(),
     deadline = started + budgetMs;
@@ -370,9 +376,15 @@ export async function scanUsage({
   start.setDate(start.getDate() - (days - 1));
   const startMs = start.getTime(),
     scope = hash(
-      `${READER_VERSION}|parser-8|${pricingVersion}|${root}|${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
+      `${READER_VERSION}|parser-9|${pricingVersion}|${root}|${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
     );
   const sourceId = hash(`${READER_VERSION}|${root}`);
+  const routesByThread=new Map();
+  for(const [key,route] of Object.entries(turnRoutes)){
+    const [thread]=key.split(':'),threadHash=hash(thread);
+    const entries=routesByThread.get(threadHash)||[];entries.push([key,route.providerId,route.model,route.ambiguous===true]);routesByThread.set(threadHash,entries);
+  }
+  const routeStamps=new Map([...routesByThread].map(([key,entries])=>[key,hash(JSON.stringify(entries.sort((a,b)=>a[0].localeCompare(b[0]))))]));
   const { files, issues: discoveryIssues } = await discover(
     root,
     startMs,
@@ -409,6 +421,7 @@ export async function scanUsage({
       old?.stamp === entry.stamp &&
       old.startMs <= startMs &&
       old.endMs <= now &&
+      (old.routeStamp||'')===(routeStamps.get(old.data?.threadHash)||'') &&
       validCachedData(old.data)
     ) {
       parsed = old.data;
@@ -420,6 +433,7 @@ export async function scanUsage({
           endMs: now,
           deadline,
           catalog,
+          turnRoutes,
         });
         scannedFiles++;
       } catch (error) {
@@ -433,7 +447,7 @@ export async function scanUsage({
       }
     }
     // A recently changing file is a safe prefix; do not cache it under a newer size.
-    next[key] = { stamp: entry.stamp, startMs, endMs: now, data: parsed };
+    next[key] = { stamp: entry.stamp, startMs, endMs: now, data: parsed,routeStamp:routeStamps.get(parsed.threadHash)||'' };
     complete = complete && parsed.complete;
     parsed.issues.forEach((x) => issues.add(x));
     for (const row of parsed.rows) {

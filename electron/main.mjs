@@ -1032,6 +1032,7 @@ function refresh() {
           : await readUsage({
               codexHome: sourceDirectory,
               cacheDirectory: path.join(app.getPath("userData"), "usage-cache"),
+              routeDirectory:app.getPath('userData'),
             });
       await enqueue(async () => {
         const currentDirectory =
@@ -1182,7 +1183,7 @@ else {
       register('paw:card-dismiss', id => {dismissCardVisitor(id);return snapshot();});
       register("paw:codex-accounts", async (action, input) => {
         const manager = await getCodexAccounts(); let result;
-        if (action === 'status') result = await manager.status();
+        if (action === 'status') result = await manager.status({refreshModels:input?.refreshModels===true});
         else if (action === 'add') result = await manager.add(input);
         else if (action === 'switch') result = await switchCodexAccount(manager,input?.id,{reviewId:input?.reviewId});
         else if (action === 'notification-settings') {await openConnectionNotificationSettings();result=await manager.status();}

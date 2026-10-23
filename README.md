@@ -54,6 +54,8 @@ Verified local third-party chat titles can carry a provider prefix. Usage shows 
 
 Third-party connections preserve account entries by default; availability depends on your account and client. The menu bar immediately shows the selected provider name, then restores local quota snapshots when switching back to ChatGPT / OpenAI. Use the provider dashboard for third-party balances and quotas.
 
+Third-party connections respect the Codex model picker when their configured model ID appears in the native model list. Models absent from that list, such as MiMo, use the connection's configured model for chat, title generation and compaction, even if the picker still shows GPT. A failed model-list read preserves the picker and displays a retry notice. No model-catalog replacement or reload is required; ChatGPT / OpenAI continues to use native model selection.
+
 See [Codex Account Manager details and limits](docs/codex-account-manager.md).
 
 ## Install

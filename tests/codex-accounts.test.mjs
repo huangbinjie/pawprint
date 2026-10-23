@@ -6,6 +6,7 @@ import path from 'node:path';
 import {parse} from 'smol-toml';
 import {CodexAccounts, MacKeychain, validateProvider, patchConfig} from '../electron/codex-accounts.mjs';
 const login=JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:'PRIVATE_ACCESS',id_token:'PRIVATE_ID'}});
+const readModels=async()=>({status:'available',models:['gpt-6.1-sol','gpt-6-astra','gpt-6-luna']});
 const input = {name:'My Provider',baseUrl:'https://example.com/v1',model:'example-model',apiKey:'test-secret'};
 async function fixture(t, original = '# My settings\nmodel = "gpt-original" # keep\nmodel_provider = "openai"\napproval_policy = "on-request"\n[projects."/my/project"]\ntrust_level = "trusted"\n') {
   const root = await mkdtemp(path.join(os.tmpdir(),'paw-accounts-')); t.after(()=>rm(root,{recursive:true,force:true}));
@@ -14,7 +15,7 @@ async function fixture(t, original = '# My settings\nmodel = "gpt-original" # ke
   const secrets = new Map(), keychain = {set:async(id,key)=>secrets.set(id,key),get:async id=>{if(!secrets.has(id))throw Error('keychain unavailable');return secrets.get(id);},remove:async id=>secrets.delete(id)};
   let running = false;
   const bridge={start:async()=>{},configure:()=>{},baseUrl:id=>`http://127.0.0.1:12345/local/${id}/v1`};
-  const manager = new CodexAccounts({directory,dataDirectory,keychain,identityBridge:bridge,running:async()=>running,platform:'darwin'});await manager.load();
+  const manager = new CodexAccounts({readModels,directory,dataDirectory,keychain,identityBridge:bridge,running:async()=>running,platform:'darwin'});await manager.load();
   return {manager,directory,dataDirectory,secrets,setRunning:value=>running=value,original};
 }
 test('switch round trip preserves unrelated settings, comments, login and excludes secrets',async t=>{
@@ -26,6 +27,17 @@ test('switch round trip preserves unrelated settings, comments, login and exclud
   assert.ok(!(await readFile(f.manager.stateFile,'utf8')).includes(input.apiKey));
   await f.manager.switch('openai');const restored=parse(await readFile(f.manager.file,'utf8'));assert.ok(restored.model_providers[id]);delete restored.model_providers;assert.deepEqual(restored,parse(f.original));assert.ok((await readFile(f.manager.file,'utf8')).includes('model = "gpt-original" # keep'));
   assert.equal(await readFile(path.join(f.directory,'auth.json'),'utf8'),login);
+});
+test('model policy follows exact native list membership without changing OpenAI identity or adding settings',async t=>{
+ const f=await fixture(t);let configured;f.manager.identityBridge.configure=providers=>configured=providers;
+ const native=(await f.manager.add({...input,model:'gpt-6.1-sol'})).providers[0];
+ await f.manager.switch(native.id);assert.equal((await f.manager.status()).providers[0].modelSelection,'picker');assert.equal(configured[0].modelSelection,'picker');
+ const vendor=(await f.manager.add({...input,name:'MiMo',model:'mimo-v2.6-pro'})).providers[1];await f.manager.switch(vendor.id);
+ let status=await f.manager.status();assert.equal(status.runtimeProvider,'openai');assert.equal(status.providers[1].modelSelection,'fixed');assert.equal(configured[1].modelSelection,'fixed');
+ assert.ok(!JSON.stringify(f.manager.state.providers).includes('modelSelection'));
+ f.manager.readModels=async()=>{throw Error('unavailable');};status=await f.manager.status({refreshModels:true});assert.ok(status.providers.every(p=>p.modelSelection==='unknown'));assert.ok(configured.every(p=>p.modelSelection==='unknown'));
+ f.manager.readModels=async()=>({status:'available',models:['mimo-v2.6-pro']});status=await f.manager.status({refreshModels:true});assert.equal(status.providers[0].modelSelection,'fixed');assert.equal(status.providers[1].modelSelection,'picker');
+ assert.equal(parse(await readFile(f.manager.file,'utf8')).model_catalog_json,undefined);
 });
 test('switch defaults while Codex runs and reject external managed changes',async t=>{
   const f=await fixture(t), id=(await f.manager.add(input)).providers[0].id;f.setRunning(true);
@@ -50,7 +62,7 @@ test('refuse profiles, existing external providers, malformed TOML and unsafe UR
 });
 test('restart reload and missing credentials do not overwrite config',async t=>{
   const f=await fixture(t),id=(await f.manager.add(input)).providers[0].id;await f.manager.switch(id);
-  const second = new CodexAccounts({directory:f.directory,dataDirectory:f.dataDirectory,keychain:f.manager.keychain,identityBridge:f.manager.identityBridge,running:async()=>false,platform:'darwin'});await second.load();assert.equal((await second.status()).selected,id);
+  const second = new CodexAccounts({readModels,directory:f.directory,dataDirectory:f.dataDirectory,keychain:f.manager.keychain,identityBridge:f.manager.identityBridge,running:async()=>false,platform:'darwin'});await second.load();assert.equal((await second.status()).selected,id);
   await second.switch('openai');f.secrets.clear();await assert.rejects(second.switch(id),/keychain/);assert.equal(parse(await readFile(second.file,'utf8')).model_provider,'openai');
 });
 test('quoted roots and deceptive multiline TOML cannot overwrite unrelated content',()=>{
@@ -93,7 +105,7 @@ test('failed Keychain deletion restores the selected provider for retry',async t
   assert.equal((await f.manager.status()).selected,id);assert.equal(f.manager.state.providers.length,1);assert.equal(f.secrets.has(id),true);
 });
 test('unsupported platforms can read metadata without invoking macOS process inspection',async t=>{
- const f=await fixture(t);const manager=new CodexAccounts({directory:f.directory,dataDirectory:f.dataDirectory,platform:'win32',running:async()=>{throw Error('must not inspect macOS processes');}});
+ const f=await fixture(t);const manager=new CodexAccounts({readModels,directory:f.directory,dataDirectory:f.dataDirectory,platform:'win32',running:async()=>{throw Error('must not inspect macOS processes');}});
  await manager.load();const status=await manager.status();assert.equal(status.supported,false);assert.equal(status.running,false);assert.equal(status.selected,'openai');
 });
 test('Codex model picker changes do not block switching back to ChatGPT while running',async t=>{

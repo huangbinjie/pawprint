@@ -153,6 +153,12 @@ export function estimateReferenceCost(model, counts, tier, catalog, provider = '
     const usd=estimateCost(bare,counts,tier,catalog,'openai');
     return usd===null?null:{usd,source:'model-reference'};
   }
+  // Prefer Xiaomi's API list for its own models. Subscription-plan catalog
+  // entries have zero per-token rates; those are not a free-use API reference.
+  if(catalog?.xiaomi?.models?.[bare] || catalog?.xiaomi?.models?.[clean]){
+    const usd=estimateCost(bare,counts,tier,catalog,'xiaomi');
+    return usd===null?null:{usd,source:'model-reference'};
+  }
   const matches=[];
   for(const [id,entry] of Object.entries(catalog||{})) {
     if(!entry?.models?.[bare] && !entry?.models?.[clean])continue;

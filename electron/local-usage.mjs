@@ -10,13 +10,14 @@ export function defaultCodexHome() {
 export function readUsage({
   codexHome = defaultCodexHome(),
   cacheDirectory,
+  routeDirectory,
   now = Date.now(),
 }) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./usage/worker.mjs", import.meta.url), {
       execArgv: [],
       resourceLimits: { maxOldGenerationSizeMb: 192 },
-      workerData: { codexHome, cacheDirectory, now },
+      workerData: { codexHome, cacheDirectory, routeDirectory, now },
     });
     let finished = false;
     const finish = (error, value) => {

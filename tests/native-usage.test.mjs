@@ -483,6 +483,23 @@ test('reference prices support qualified/datetime models and refuse unknown or c
  catalog.other={models:{'sample-model':{cost:{input:20,output:100}}}};
  assert.equal(estimateReferenceCost('sample-model',n,null,catalog,'my-gateway'),null);
 });
+test('MiMo reference pricing uses the official API catalog rather than subscription zero rates or reseller prices',()=>{
+ const counts=tokenCounts(tokens()),catalog={xiaomi:{models:{'mimo-v2.6-pro':{cost:{input:0.435,output:0.87,cache_read:0.0036}}}},'xiaomi-token-plan-cn':{models:{'mimo-v2.6-pro':{cost:{input:0,output:0,cache_read:0}}}},reseller:{models:{'mimo-v2.6-pro':{cost:{input:2,output:4}}}}};
+ const ref=estimateReferenceCost('mimo-v2.6-pro',counts,null,catalog,'pawprint_test');close(ref.usd,0.000522);assert.equal(ref.source,'model-reference');assert.equal(estimateCost('mimo-v2.6-pro',counts,null,catalog,'pawprint_test'),null);
+});
+test('exact turn mappings separate MiMo from GPT and invalidate only the affected session cache',()=>fixture(async(root,cacheDirectory)=>{
+ const thread='01a0f1ea-4534-7651-b950-000000000020',turnA='01a0f1ea-4534-7651-b950-000000000021',turnB='01a0f1ea-4534-7651-b950-000000000022',provider='pawprint_'+'a'.repeat(32);
+ await logFile(root,'mixed.jsonl',[meta(thread,now-100),context(now-99,'gpt-6-astra',turnA),meter(now-90,tokens()),context(now-79,'gpt-6-astra',turnB),meter(now-70,tokens(2000,200),tokens())],now);
+ const catalog={xiaomi:{models:{'mimo-v2.6-pro':{cost:{input:0.435,output:0.87}}}}};
+ const baseline=(await scanUsage({codexHome:root,cacheDirectory,now,catalog}))[0];assert.equal(baseline.daily.at(-1).modelBreakdowns[0].totalTokens,2200);
+ const turnRoutes={[thread+':'+turnB]:{providerId:provider,model:'mimo-v2.6-pro',at:now-80}};
+ const corrected=await scanUsage({codexHome:root,cacheDirectory,now,catalog,turnRoutes});let day=normalizeReport(corrected,now).days.at(-1);
+ assert.equal(day.tokens,2200);assert.equal(day.models.find(m=>m.provider==='openai').tokens,1100);
+ const mimo=day.models.find(m=>m.provider===provider);assert.equal(mimo.name,'mimo-v2.6-pro');assert.equal(mimo.tokens,1100);close(mimo.referenceUSD,0.000522);assert.equal(mimo.usd,null);assert.equal(mimo.usesModelReference,true);assert.equal(corrected[0].diagnostics.scannedFiles,1);
+ const warm=(await scanUsage({codexHome:root,cacheDirectory,now,catalog,turnRoutes}))[0];assert.equal(warm.diagnostics.cachedFiles,1);
+ turnRoutes[thread+':'+turnB].ambiguous=true;day=normalizeReport(await scanUsage({codexHome:root,cacheDirectory,now,catalog,turnRoutes}),now).days.at(-1);
+ assert.equal(day.models.find(m=>m.provider==='unknown').tokens,1100);assert.equal(day.tokens,2200);
+}));
 test('reference costs are summed per request and do not mint extra pet coins',()=>fixture(async(root,cacheDirectory)=>{
  await logFile(root,'reference.jsonl',[meta('reference',now-100,{model_provider:'my-gateway'}),context(now-99,'gpt-6-astra'),meter(now-90,tokens())],now);
  const catalog={openai:{models:{'gpt-6-astra':{cost:{input:2,cache_read:0.2,output:10}}}}};

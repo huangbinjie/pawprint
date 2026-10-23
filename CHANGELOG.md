@@ -2,6 +2,18 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.15.2 — 2026-10-23
+
+- macOS 第三方连接按原生模型列表决定是否保留聊天框选模；MiMo 等列表外模型使用配置模型，支持运行中新增连接。
+- 保留工具调用所需的协议头和流式、压缩响应，同时过滤凭据、身份和逐跳头。
+- 根据准确的会话与轮次记录展示新增 MiMo 用量，补充小米 API 参考价格；历史缺少证据的记录保持原标注，参考费用不等于实际套餐扣费。
+- Preserve native model selection for listed models and pin unlisted connection models, including MiMo, without replacing the client catalog.
+- Forward feature headers and encoded streaming responses while filtering credentials, identity and hop-by-hop headers.
+- Attribute new MiMo usage by exact thread/turn evidence and show Xiaomi API reference costs separately from subscription billing.
+- macOS 菜单栏入口不显示的反馈仍在调查，本次未修复。The reported missing macOS menu-bar entry remains unresolved.
+
+完整中英文说明 / Full bilingual notes: [v0.15.2](docs/releases/v0.15.2.md).
+
 ## 0.15.1 — 2026-10-22
 
 - 降低宠物动画 CPU 占用；隐藏或离屏时暂停基础动画更新。

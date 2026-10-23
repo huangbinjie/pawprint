@@ -1,5 +1,9 @@
 // English UI catalog. Keys are original source messages; game data and IDs stay unchanged.
 export default {
+  "配置模型不在客户端列表中，此连接固定使用配置模型，忽略聊天框的模型选择。":"The configured model is absent from the client list. This connection uses that model regardless of the chat model picker.",
+  "配置模型在客户端列表中，此连接保留聊天框的模型选择。":"The configured model is in the client list. This connection respects the chat model picker.",
+  "暂未读取到客户端模型列表，保留聊天框选择；可刷新状态后重试。":"The client model list is unavailable. The chat model picker remains active; refresh status to retry.",
+  "配置模型在客户端列表中时保留聊天框选择；不在列表中时固定使用配置模型。":"Models in the client list respect the chat model picker. Models absent from that list use the connection's configured model.",
   "选用第三方 Provider 时显示服务名，切回 ChatGPT / OpenAI 后显示额度。":"Show the provider name for third-party connections and quota when switching back to ChatGPT / OpenAI.",
   "默认保留 Dot 等账号入口，实际权限以客户端为准。":"Dot and account entries are preserved by default. Actual access depends on the client.",
   "第三方请求经本机转发，请保持 Pawprint 运行。客户端可能隐藏第三方名称，当前服务以上方为准。":"Third-party requests use the local bridge. Keep Pawprint running. The client may hide the provider name; the current service is shown above.",

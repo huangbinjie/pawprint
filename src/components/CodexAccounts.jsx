@@ -6,6 +6,7 @@ export default function CodexAccounts({ titleLabels, mode = 'connections' }) {
   const [status,setStatus]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [form,setForm]=useState({name:'',baseUrl:'',model:'',apiKey:''}),[adding,setAdding]=useState(false),[deleting,setDeleting]=useState(null),[selectionFeedback,setSelectionFeedback]=useState(null);
   const modal=useRef(null),titleState=titleLabels||status?.titleLabels;
+  const selectedProvider=status?.providers.find(p=>p.id===status.selected);
   const [recovering,setRecovering]=useState(false);
   const run=async (fn,onFailure)=>{setBusy(true);setError('');try{const r=await fn();if(!r.ok)throw Error(r.error);setStatus(r.data);return r.data;}catch(e){if(onFailure)onFailure(e.message);else setError(e.message);return false;}finally{setBusy(false);}};
   const choose=async (id,reviewId)=>{
@@ -25,10 +26,11 @@ export default function CodexAccounts({ titleLabels, mode = 'connections' }) {
     {(titleState?.error||error)&&<p role="status">{titleState?.error||error}</p>}
     <div className="codex-actions"><button className="button secondary" disabled={busy||titleState?.enabled===false||status?.supported===false} onClick={()=>run(()=>api.codexAccounts('title-labels-refresh'))}>立即标注会话标题</button></div></section>;
   return <section className="card codex-card codex-accounts">
-    <div className="codex-card-head"><div><h2>连接与 Provider</h2><p>选择新会话的默认连接，保留 ChatGPT 登录。</p></div><button className="button secondary" disabled={busy} onClick={()=>run(()=>api.codexAccounts('status'))}>刷新状态</button></div>
+    <div className="codex-card-head"><div><h2>连接与 Provider</h2><p>选择新会话的默认连接，保留 ChatGPT 登录。</p></div><button className="button secondary" disabled={busy} onClick={()=>run(()=>api.codexAccounts('status',{refreshModels:true}))}>刷新状态</button></div>
     {error&&<p role="alert">{error}</p>}{status&&<>
-      <div className="codex-current"><span>当前服务</span><strong translate="no">{status.providers.find(p=>p.id===status.selected)?.name||(status.selected==='openai'?'ChatGPT / OpenAI':status.selected)} · {status.model||'—'}</strong><small>{status.running?'Codex 正在运行':'Codex 未运行'}</small></div>
+      <div className="codex-current"><span>当前服务</span><strong translate="no">{selectedProvider?.name||(status.selected==='openai'?'ChatGPT / OpenAI':status.selected)} · {(selectedProvider?.modelSelection==='fixed'?selectedProvider.model:status.model||selectedProvider?.model)||'—'}</strong><small>{status.running?'Codex 正在运行':'Codex 未运行'}</small></div>
       <p>更新默认连接后，请新建会话；已有会话不会自动切换。</p>
+      {selectedProvider&&<p className="codex-model-selection">{selectedProvider.modelSelection==='fixed'?'配置模型不在客户端列表中，此连接固定使用配置模型，忽略聊天框的模型选择。':selectedProvider.modelSelection==='picker'?'配置模型在客户端列表中，此连接保留聊天框的模型选择。':'暂未读取到客户端模型列表，保留聊天框选择；可刷新状态后重试。'}</p>}
       {status.identityError&&<p role="alert">{status.identityError}</p>}
       {status.conflict&&<div className="codex-conflict"><h3>检测到配置冲突</h3><p>以下设置与 Pawprint 上次保存的记录不同：</p><ul>{status.conflict.fields.map(field=><li key={field}>{field}</li>)}</ul>
         {status.conflict.recoverable?<><p>可以先备份当前配置，再恢复已保存的连接设置并切回 ChatGPT。</p><button className="button secondary" disabled={busy} onClick={()=>setRecovering(true)}>处理配置冲突</button>
@@ -46,7 +48,7 @@ export default function CodexAccounts({ titleLabels, mode = 'connections' }) {
       </details>
       {deleting&&<div className="codex-confirm" role="alert"><p>确认删除 Provider：<span translate="no">{deleting.name}</span>？</p>{status.selected===deleting.id&&<p>将先恢复 ChatGPT 默认配置。</p>}<p>删除密钥后，使用它的旧会话将无法继续请求。</p><div className="codex-actions"><button className="button secondary" disabled={busy} onClick={()=>setDeleting(null)}>取消删除</button><button className="button" disabled={busy} onClick={async()=>{if(await run(()=>api.codexAccounts('remove',{id:deleting.id})))setDeleting(null);}}>确认删除</button></div></div>}
       <dialog ref={modal} className="codex-modal" onCancel={e=>{if(busy)e.preventDefault();}} onClose={()=>{setAdding(false);setForm(current=>({...current,apiKey:''}));}}>
-        <h3>添加 API Provider</h3><p>API Key 仅保存到 macOS Keychain。</p>
+        <h3>添加 API Provider</h3><p>API Key 仅保存到 macOS Keychain。</p><p>配置模型在客户端列表中时保留聊天框选择；不在列表中时固定使用配置模型。</p>
         <form onSubmit={async e=>{e.preventDefault();const input={...form};setForm({...form,apiKey:''});if(await run(()=>api.codexAccounts('add',input))){setAdding(false);setForm({name:'',baseUrl:'',model:'',apiKey:''});}}}>
           {field('name','Provider 名称','我的 API')}{field('baseUrl','Base URL','https://api.example.com/v1','url')}{field('model','模型','服务提供的模型 ID')}{field('apiKey','API Key','仅保存到 Keychain','password')}
           {error&&<p role="alert">{error}</p>}<div className="codex-actions"><button className="button secondary" disabled={busy} type="button" onClick={()=>setAdding(false)}>取消</button><button className="button" disabled={busy} type="submit">保存 Provider</button></div>

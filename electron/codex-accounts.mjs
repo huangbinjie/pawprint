@@ -6,6 +6,7 @@ import { promisify, isDeepStrictEqual } from 'node:util';
 import { parse as parseToml } from 'smol-toml';
 import {providerRefreshNotice} from './codex-client-refresh.mjs';
 import {hasFileChatGPTLogin} from './codex-identity-bridge.mjs';
+import {readCodexModelList,modelSelection} from './codex-model-policy.mjs';
 function parse(text) { try { return parseToml(text); } catch { throw new Error('Codex 配置 TOML 格式无效，请检查配置文件；未覆盖任何设置。'); } }
 
 export const KEYCHAIN_SERVICE = 'studio.binmax.pawprint.codex-provider';
@@ -127,11 +128,12 @@ export async function codexRunning() {
   return stdout.split('\n').some(line => /(?:^|\/)(?:codex|Codex|CodexCLI|Codex Dream Skin)(?:$|\.app\/)/.test(line.trim()));
 }
 export class CodexAccounts {
-  constructor({ directory, dataDirectory, keychain = new MacKeychain(), running = codexRunning, platform = process.platform, refreshClient = async()=>({status:'unavailable'}),identityBridge=null,onSelection=()=>{} }) {
+  constructor({ directory, dataDirectory, keychain = new MacKeychain(), running = codexRunning, platform = process.platform, refreshClient = async()=>({status:'unavailable'}),identityBridge=null,onSelection=()=>{},readModels=readCodexModelList }) {
     this.directory = directory; this.dataDirectory = dataDirectory; this.keychain = keychain; this.running = running; this.platform = platform; this.refreshClient = refreshClient;
     this.file = path.join(directory, 'config.toml'); this.stateFile = path.join(dataDirectory, 'codex-accounts.json');
     this.state = { providers: [], providerNames: {} }; this.queue = Promise.resolve();
     this.identityBridge=identityBridge;this.onSelection=onSelection;
+    this.readModels=readModels;this.modelList={status:'unavailable',models:[]};this.modelListExpires=0;
   }
   serial(fn) { const job = this.queue.then(fn); this.queue = job.catch(() => {}); return job; }
   async load() {
@@ -152,12 +154,30 @@ export class CodexAccounts {
   }
   async save() { this.rememberNames();delete this.state.preserveDot;delete this.state.connectionMode; await mkdir(this.dataDirectory, { recursive: true, mode: 0o700 }); await atomic(this.stateFile, JSON.stringify(this.state)); }
   supported() { if (this.platform !== 'darwin') fail('Codex Account Manager 当前仅支持 macOS。'); }
-  async status() {
+  async refreshModelList({force=false}={}) {
+    if(this.platform!=='darwin'||!this.state.providers.length)return;
+    if(this.modelListPending)return this.modelListPending;
+    if(!force&&Date.now()<this.modelListExpires)return;
+    this.modelListPending=(async()=>{
+      try{
+        const list=await this.readModels({directory:this.directory});
+        this.modelList=list?.status==='available'&&Array.isArray(list.models)&&list.models.every(m=>typeof m==='string'&&m.length>0&&m.length<=160)
+          ?{status:'available',models:[...new Set(list.models)]}:{status:'unavailable',models:[]};
+      }catch{this.modelList={status:'unavailable',models:[]};}
+      this.modelListExpires=Date.now()+60000;
+    })();
+    try{await this.modelListPending;}finally{this.modelListPending=null;}
+  }
+  configureBridge(providers=this.state.providers) {
+    this.identityBridge?.configure(providers.map(p=>({...p,modelSelection:modelSelection(p,this.modelList)})));
+  }
+  async status({refreshModels=false}={}) {
     const text = await optional(this.file), doc = parse(text);
+    await this.refreshModelList({force:refreshModels});this.configureBridge();
     const id = selectedProvider(doc,this.state);
     const providerNames={...this.rememberNames()};
     for(const [key,p] of Object.entries(doc.model_providers||{}))if(typeof p?.name==='string'&&!Object.hasOwn(providerNames,key))providerNames[key]=p.name;
-    return { supported: this.platform === 'darwin', providerNames, providers: this.state.providers, selected: id, model: doc.model || null, running: this.platform === 'darwin' ? await this.running() : false, configPath: this.file, backupPath: this.state.backupPath || null,
+    return { supported: this.platform === 'darwin', providerNames, providers: this.state.providers.map(p=>({...p,modelSelection:modelSelection(p,this.modelList)})), modelListStatus:this.modelList.status, selected: id, model: doc.model || null, running: this.platform === 'darwin' ? await this.running() : false, configPath: this.file, backupPath: this.state.backupPath || null,
       clientRefresh: this.clientRefresh?.providerId===id||this.clientRefresh?.status==='config-changed' ? this.clientRefresh : null,
       conflict:configurationConflict(text,this.state),
       identityMode:this.state.identityBridgeVersion===1?'chatgpt':'provider',identityError:this.identityError||null,
@@ -192,7 +212,7 @@ export class CodexAccounts {
   }); }
   async prepareIdentityConnection() {
     if(!this.identityBridge||!this.state.providers.length)return;
-    this.identityBridge.configure(this.state.providers);
+    await this.refreshModelList();this.configureBridge();
     if(this.state.identityBridgeVersion===1)await this.identityBridge.start();
     const status=await this.status();
     if(this.state.identityBridgeVersion===1&&!status.conflict&&(status.selected==='openai'||status.dotCompatible)){
@@ -218,6 +238,7 @@ export class CodexAccounts {
     const provider = id === 'openai' ? null : providers.find(p => p.id === id);
     if (id !== 'openai' && !provider) fail('Provider 不存在。');
     if (provider) await this.keychain.get(id);
+    await this.refreshModelList();
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     const lock = path.join(this.directory, '.pawprint-account-lock');
     try { await mkdir(lock); } catch (e) { if (e.code === 'EEXIST') fail('另一个切换正在进行，或上次切换异常退出。请检查 .pawprint-account-lock。'); throw e; }
@@ -245,7 +266,7 @@ export class CodexAccounts {
       if(provider&&!bridge)fail('无法建立账号服务连接，请先在 Codex 登录 ChatGPT，并保持 Pawprint 运行。');
       const after = patchConfig(before, provider, this.state.baseline, providers,bridge,true);
       const managed={roots:roots(after),block:split(after).block,selected:id};
-      if (after === before) { this.state.providers = providers;this.state.identityBridgeVersion=bridge?1:0;this.state.managed=managed; await this.save();this.identityBridge?.configure(providers); return await this.finishSelection(id,after); }
+      if (after === before) { this.state.providers = providers;this.state.identityBridgeVersion=bridge?1:0;this.state.managed=managed; await this.save();this.configureBridge(providers); return await this.finishSelection(id,after); }
       const backups = path.join(this.directory, 'pawprint-account-backups'); await mkdir(backups, { recursive: true, mode: 0o700 });
       const backupPath = path.join(backups, `${Date.now()}-${randomUUID()}.toml`);
       await writeFile(backupPath, before, { mode: 0o600, flag: 'wx' });
@@ -253,7 +274,7 @@ export class CodexAccounts {
       delete next.preserveDot;delete next.connectionMode;
       this.state.pending = { before, after, next }; await this.save();
       if (await optional(this.file) !== before) { delete this.state.pending; await this.save(); fail('配置发生变化，已取消切换。'); }
-      await atomic(this.file, after); this.state = next; await this.save();this.identityBridge?.configure(providers);
+      await atomic(this.file, after); this.state = next; await this.save();this.configureBridge(providers);
       return await this.finishSelection(id,after);
     } finally { await rm(lock, { recursive: true, force: true }); }
   }

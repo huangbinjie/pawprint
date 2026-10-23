@@ -9,7 +9,7 @@ import {CodexAccounts} from '../electron/codex-accounts.mjs';
 
 test('account preservation is fixed on without a setting or entitlement detector',async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'paw-fixed-identity-')),directory=path.join(root,'codex'),profile=path.join(root,'paw');await mkdir(directory);await seedMatureCompanion(profile);
- const original='model="gpt-existing"\n',login=JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:'DUMMY_ACCESS',id_token:'DUMMY_ID'}});
+ const original='model="gpt-existing"\n[features]\nremote_models=false\napps=false\nplugins=false\n',login=JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:'DUMMY_ACCESS',id_token:'DUMMY_ID'}});
  await writeFile(path.join(directory,'config.toml'),original);await writeFile(path.join(directory,'auth.json'),login);
  const keychain={set:async()=>{},get:async()=> 'dummy',remove:async()=>{}},manager=new CodexAccounts({directory,dataDirectory:profile,keychain,running:async()=>false});await manager.load();
  const added=await manager.add({name:'Identity test provider',baseUrl:'https://example.com/v1',model:'test-model',apiKey:'dummy'}),id=added.providers[0].id;
@@ -23,11 +23,24 @@ test('account preservation is fixed on without a setting or entitlement detector
   await panel().getByRole('button',{name:'选用 Identity test provider',exact:true}).click();await expect(panel().locator('.codex-current')).toContainText('Identity test provider');
   let config=parse(await readFile(path.join(directory,'config.toml'),'utf8')),base=config.openai_base_url;
   expect(config.model_provider).toBe('openai');expect(config.model_providers[id].requires_openai_auth).toBe(true);expect(config.model_providers[id].auth).toBeUndefined();
+  await expect(panel().locator(':scope > p').filter({hasText:'配置模型不在客户端列表中，此连接固定使用配置模型，忽略聊天框的模型选择。'})).toBeVisible();
+  await writeFile(path.join(directory,'config.toml'),(await readFile(path.join(directory,'config.toml'),'utf8')).replace('model = "test-model"','model = "gpt-picker-choice"'));
   expect(JSON.parse(await readFile(manager.stateFile,'utf8')).preserveDot).toBeUndefined();
   await panel().getByRole('button',{name:'刷新状态',exact:true}).click();await expect(panel().getByRole('switch')).toHaveCount(0);
+  await expect(panel().locator('.codex-current')).toContainText('test-model');await expect(panel().locator('.codex-current')).not.toContainText('gpt-picker-choice');
   await panel().getByText('切换说明',{exact:true}).click();await expect(panel().getByText('默认保留 Dot 等账号入口，实际权限以客户端为准。',{exact:true})).toBeVisible();
   await app.close();await launch();await expect(panel().getByRole('switch')).toHaveCount(0);await expect(panel().locator('.codex-current')).toContainText('Identity test provider');
   expect(parse(await readFile(path.join(directory,'config.toml'),'utf8')).openai_base_url).toBe(base);
+  await panel().getByRole('button',{name:'添加 Provider',exact:true}).click();const modal=home.getByRole('dialog');
+  await modal.getByLabel('Provider 名称',{exact:true}).fill('GPT picker gateway');await modal.getByLabel('Base URL',{exact:true}).fill('https://example.com/v1');await modal.getByLabel('模型',{exact:true}).fill('gpt-6.1-sol');await modal.getByLabel('API Key',{exact:true}).fill('dummy');
+  await modal.getByRole('button',{name:'保存 Provider',exact:true}).click();await expect(modal).not.toBeVisible();
+  await panel().getByRole('button',{name:'选用 GPT picker gateway',exact:true}).click();await expect(panel().locator('.codex-model-selection')).toHaveText('配置模型在客户端列表中，此连接保留聊天框的模型选择。');
+  await writeFile(path.join(directory,'config.toml'),(await readFile(path.join(directory,'config.toml'),'utf8')).replace('model = "gpt-6.1-sol"','model = "gpt-6-astra"'));
+  await panel().getByRole('button',{name:'刷新状态',exact:true}).click();await expect(panel().locator('.codex-current')).toContainText('gpt-6-astra');
+  await app.evaluate(({app})=>{const path=process.getBuiltinModule('path'),req=process.getBuiltinModule('module').createRequire(path.join(app.getAppPath(),'package.json')),prototype=req('./electron/codex-provider-titles.mjs').CodexTitleClient.prototype;globalThis.originalModelListRequest=prototype.request;prototype.request=function(method,params){return method==='model/list'?Promise.reject(Error('Isolated metadata failure')):globalThis.originalModelListRequest.call(this,method,params);};});
+  await panel().getByRole('button',{name:'刷新状态',exact:true}).click();await expect(panel().locator('.codex-model-selection')).toHaveText('暂未读取到客户端模型列表，保留聊天框选择；可刷新状态后重试。');
+  await app.evaluate(({app})=>{const path=process.getBuiltinModule('path'),req=process.getBuiltinModule('module').createRequire(path.join(app.getAppPath(),'package.json'));req('./electron/codex-provider-titles.mjs').CodexTitleClient.prototype.request=globalThis.originalModelListRequest;delete globalThis.originalModelListRequest;});
+  await panel().getByRole('button',{name:'刷新状态',exact:true}).click();await expect(panel().locator('.codex-model-selection')).toHaveText('配置模型在客户端列表中，此连接保留聊天框的模型选择。');
   await panel().getByRole('button',{name:'选用 ChatGPT',exact:true}).click();await expect(panel().locator('.codex-current')).toContainText('ChatGPT / OpenAI');
   config=parse(await readFile(path.join(directory,'config.toml'),'utf8'));expect(config.openai_base_url).toBeUndefined();expect(config.model).toBe('gpt-existing');expect(await readFile(path.join(directory,'auth.json'),'utf8')).toBe(login);
  }finally{await app?.close();await rm(root,{recursive:true,force:true});}
@@ -45,7 +58,7 @@ test('native pet menu and independent Codex Provider form preserve current login
   });
   await new Promise(resolve=>refreshServer.listen(path.join(codexHome,'ipc','ipc.sock'),resolve));
   const login=JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:'DUMMY_ACCESS',id_token:'DUMMY_ID'}});
-  const config='model = "gpt-existing"\napproval_policy = "on-request"\n';await writeFile(path.join(codexHome,'config.toml'),config);await writeFile(path.join(codexHome,'auth.json'),login);
+  const config='model = "gpt-existing"\napproval_policy = "on-request"\n[features]\nremote_models=false\napps=false\nplugins=false\n';await writeFile(path.join(codexHome,'config.toml'),config);await writeFile(path.join(codexHome,'auth.json'),login);
   await seedMatureCompanion(path.join(root,'paw'));
   const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:path.join(root,'paw'),PAWPRINT_TEST_CODEX_HOME:codexHome}});
   let providerId;
@@ -53,7 +66,9 @@ test('native pet menu and independent Codex Provider form preserve current login
     await app.evaluate(({Menu,Notification,shell})=>{
       const original=Menu.buildFromTemplate.bind(Menu);globalThis.accountTestMenus=[];
       Menu.buildFromTemplate=template=>{const menu=original(template);globalThis.accountTestMenus.push({template,menu});return menu;};
-      const popup=Menu.prototype.popup;globalThis.petPopupCount=0;Menu.prototype.popup=function(...args){globalThis.petPopupCount++;return popup.apply(this,args);};
+      // Inspect the built native menu without opening a Cocoa modal menu,
+      // which can block subsequent Electron RPCs in an unattended test.
+      globalThis.petPopupCount=0;Menu.prototype.popup=function(){globalThis.petPopupCount++;};
       globalThis.accountSwitchNotices=[];Notification.isSupported=()=>true;
       Notification.prototype.show=function(){globalThis.accountSwitchNotices.push({title:this.title,body:this.body,silent:this.silent});};
       globalThis.accountNotificationSettings=[];shell.openExternal=async url=>{globalThis.accountNotificationSettings.push(url);};

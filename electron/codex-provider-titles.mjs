@@ -55,7 +55,7 @@ export class CodexTitleClient {
     this.child.stdin.write(JSON.stringify({method:'initialized'})+'\n');return this;
   }
   request(method,params) {
-    if(!['initialize','thread/read','thread/name/set'].includes(method))return Promise.reject(Error('Unsupported title operation'));
+    if(!['initialize','thread/read','thread/name/set','model/list'].includes(method))return Promise.reject(Error('Unsupported title operation'));
     return new Promise((resolve,reject)=>{const id=++this.sequence;const timer=setTimeout(()=>{this.pending.delete(id);reject(Error('Codex 标题接口超时。'));},8000);this.pending.set(id,{resolve,reject,timer});this.child.stdin.write(JSON.stringify({id,method,params})+'\n');});
   }
   fail(){for(const p of this.pending.values()){clearTimeout(p.timer);p.reject(Error('Codex 标题连接已断开。'));}this.pending.clear();}
