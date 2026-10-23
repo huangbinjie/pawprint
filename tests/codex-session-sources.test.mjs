@@ -16,3 +16,11 @@ test('missing or unsupported metadata never creates a database or invents an Ope
  assert.deepEqual(await readCodexSessionSources(directory),{status:'unavailable',items:[]});await assert.rejects(access(path.join(directory,'state_5.sqlite')));
  const db=new DatabaseSync(path.join(directory,'state_5.sqlite'));db.exec('CREATE TABLE threads(id TEXT,updated_at INTEGER)');db.close();assert.deepEqual(await readCodexSessionSources(directory),{status:'unavailable',items:[]});
 });
+
+test('bound service is shown separately from the last observed destination',async t=>{
+ const directory=await mkdtemp(path.join(os.tmpdir(),'paw-sources-bound-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+ const db=new DatabaseSync(path.join(directory,'state_5.sqlite'));db.exec('CREATE TABLE threads(id TEXT, name TEXT, cwd TEXT, model_provider TEXT, updated_at INTEGER)');db.prepare('INSERT INTO threads VALUES(?,?,?,?,?)').run(id(1),'Chat','/private','openai',1);db.close();
+ const {CodexSessionBindings}=await import('../electron/codex-session-bindings.mjs'),{CodexRouteEvidence}=await import('../electron/codex-route-evidence.mjs');
+ const vendor='pawprint_'+'a'.repeat(32);await new CodexRouteEvidence(directory).record({threadId:id(1),providerId:vendor,model:'mimo-test'});await new CodexSessionBindings(directory).bind(id(1),'openai');
+ const result=await readCodexSessionSources(directory,directory);assert.equal(result.items[0].providerId,vendor);assert.equal(result.items[0].boundProviderId,'openai');
+});

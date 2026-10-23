@@ -11,6 +11,7 @@ import {findCodexBinary} from '../electron/codex-provider-titles.mjs';
 
 const {CodexIdentityBridge}=await import(process.env.PAWPRINT_BRIDGE_MODULE?pathToFileURL(process.env.PAWPRINT_BRIDGE_MODULE).href:'../electron/codex-identity-bridge.mjs');
 const root=await mkdtemp(path.join(os.tmpdir(),'paw-native-compression-'));
+const officialMode=process.env.PAWPRINT_TEST_OFFICIAL_ROUTE==='1';
 const account='dummy-isolated-account',providerId='pawprint_'+'a'.repeat(32);
 const incoming=[],forwarded=[];let child,bridge,timer;
 const server=http.createServer(async(req,res)=>{
@@ -35,9 +36,10 @@ try{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const origin=`http://127.0.0.1:${server.address().port}`;
  bridge=new CodexIdentityBridge({dataDirectory:path.join(root,'pawprint'),keychain:{get:async()=> 'dummy-provider-key'}});
- bridge.configure([{id:providerId,baseUrl:origin+'/upstream/v1',model:'gpt-6.1-sol',modelSelection:'picker'}]);await bridge.start();
+ bridge.configure([{id:providerId,baseUrl:origin+'/upstream/v1',model:'gpt-6.1-sol',modelSelection:'picker'}],{officialBaseUrl:origin+'/upstream/v1'});await bridge.start();
+ await bridge.prepareBindings({directory:root,currentProviderId:officialMode?'openai':providerId});
  bridge.server.prependListener('request',req=>incoming.push({method:req.method,encoding:req.headers['content-encoding']??null}));
- await writeFile(path.join(root,'config.toml'),`model="gpt-6.1-sol"\nmodel_provider="openai"\nopenai_base_url="${bridge.baseUrl(providerId)}"\nchatgpt_base_url="${origin}/backend-api"\ncli_auth_credentials_store="file"\n[features]\nenable_request_compression=true\nremote_models=false\napps=false\nplugins=false\n[analytics]\nenabled=false\n`);
+ await writeFile(path.join(root,'config.toml'),`model="gpt-6.1-sol"\nmodel_provider="openai"\nopenai_base_url="${bridge.baseUrl(officialMode?'openai':providerId)}"\nchatgpt_base_url="${origin}/backend-api"\ncli_auth_credentials_store="file"\n[features]\nenable_request_compression=true\nremote_models=false\napps=false\nplugins=false\n[analytics]\nenabled=false\n`);
  const claims={sub:'dummy-user',exp:Math.floor(Date.now()/1000)+3600,'https://api.openai.com/auth':{chatgpt_account_id:account,chatgpt_user_id:'dummy-user',chatgpt_plan_type:'plus'}};
  const jwt='eyJhbGciOiJub25lIn0.'+Buffer.from(JSON.stringify(claims)).toString('base64url')+'.dummy';
  await writeFile(path.join(root,'auth.json'),JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:jwt,id_token:jwt,refresh_token:'dummy',account_id:account},last_refresh:new Date().toISOString()}),{mode:0o600});
@@ -48,8 +50,8 @@ try{
  assert.ok(incoming.some(r=>r.method==='POST'&&r.encoding==='zstd'),'Native ChatGPT client must send Zstd');
  assert.equal(code,0,output.slice(-800)+'\n'+errors.slice(-800));
  assert.match(output,/PAWPRINT_COMPRESSION_OK/);assert.ok(forwarded.length>0);
- assert.ok(forwarded.every(r=>r.encoding===null&&r.providerKey&&!r.identityLeaked&&r.model==='gpt-6.1-sol'));
- console.log(JSON.stringify({nativeAuth:'dummy-chatgpt',incoming,forwarded,reply:'PAWPRINT_COMPRESSION_OK',passed:true},null,2));
+ assert.ok(forwarded.every(r=>r.encoding===null&&r.providerKey===!officialMode&&r.identityLeaked===officialMode&&r.model==='gpt-6.1-sol'));
+ console.log(JSON.stringify({nativeAuth:'dummy-chatgpt',route:officialMode?'official':'third-party',incoming,forwarded,reply:'PAWPRINT_COMPRESSION_OK',passed:true},null,2));
 }finally{
  clearTimeout(timer);
  if(child?.exitCode===null){const exited=new Promise(r=>child.once('exit',r));child.kill();await exited;}

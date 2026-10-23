@@ -7,6 +7,46 @@ import {parse} from 'smol-toml';
 import {seedMatureCompanion} from './fixtures/game.mjs';
 import {CodexAccounts} from '../electron/codex-accounts.mjs';
 
+test('provider deletion opens in viewport and keeps failures inside the confirmation dialog',async({},info)=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'paw-delete-dialog-')),profile=path.join(root,'paw'),codex=path.join(root,'codex');
+ await mkdir(codex);await seedMatureCompanion(profile);
+ const config='model="gpt-existing"\n[features]\nremote_models=false\napps=false\nplugins=false\n';
+ const providers=Array.from({length:8},(_,n)=>({id:`pawprint_delete_test_${n}`,name:`Delete test ${n}`,model:'test-model',baseUrl:'https://example.com/v1'}));
+ await writeFile(path.join(codex,'config.toml'),config);await writeFile(path.join(profile,'codex-accounts.json'),JSON.stringify({providers}));
+ const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:profile,PAWPRINT_TEST_CODEX_HOME:codex}});
+ try{
+  await app.evaluate(({app})=>{
+   const path=process.getBuiltinModule('path'),req=process.getBuiltinModule('module').createRequire(path.join(app.getAppPath(),'package.json'));
+   globalThis.deleteTestCalls=[];globalThis.deleteTestFailure=true;
+   req('./electron/codex-accounts.mjs').MacKeychain.prototype.remove=async id=>{
+    globalThis.deleteTestCalls.push(id);if(globalThis.deleteTestFailure)throw Error('Isolated keychain failure');
+    await new Promise(resolve=>{globalThis.finishDeleteTest=resolve;});
+   };
+  });
+  const home=await openCodex(app),panel=home.locator('.codex-accounts'),trigger=panel.getByRole('button',{name:'删除 Delete test 0',exact:true});
+  await trigger.click();const dialog=home.getByRole('dialog');
+  await expect(dialog).toBeInViewport();await expect(dialog).toContainText('Delete test 0');
+  await expect(dialog.getByRole('button',{name:'取消删除',exact:true})).toBeFocused();
+  expect(await app.evaluate(()=>globalThis.deleteTestCalls)).toEqual([]);
+  await home.screenshot({path:info.outputPath('delete-provider-confirmation.png')});
+  await dialog.getByRole('button',{name:'取消删除',exact:true}).click();await expect(dialog).not.toBeVisible();await expect(trigger).toBeFocused();
+  await trigger.click();await home.keyboard.press('Escape');await expect(dialog).not.toBeVisible();
+  expect(await app.evaluate(()=>globalThis.deleteTestCalls)).toEqual([]);
+  await trigger.click();await dialog.getByRole('button',{name:'确认删除',exact:true}).click();
+  await expect(dialog.getByRole('alert')).toContainText('Isolated keychain failure');await expect(dialog).toBeInViewport();
+  expect(JSON.parse(await readFile(path.join(profile,'codex-accounts.json'),'utf8')).providers).toHaveLength(8);
+  await app.evaluate(()=>{globalThis.deleteTestFailure=false;});await dialog.getByRole('button',{name:'确认删除',exact:true}).click();
+  await expect(dialog.getByRole('button',{name:'正在删除…',exact:true})).toBeDisabled();
+  await expect(dialog.getByRole('button',{name:'取消删除',exact:true})).toBeDisabled();
+  await home.keyboard.press('Escape');await expect(dialog).toBeVisible();
+  await expect.poll(()=>app.evaluate(()=>typeof globalThis.finishDeleteTest)).toBe('function');await app.evaluate(()=>globalThis.finishDeleteTest());
+  await expect(dialog).not.toBeVisible();await expect(trigger).toHaveCount(0);
+  expect(await app.evaluate(()=>globalThis.deleteTestCalls)).toEqual([providers[0].id,providers[0].id]);
+  expect(JSON.parse(await readFile(path.join(profile,'codex-accounts.json'),'utf8')).providers).toHaveLength(7);
+  expect(await readFile(path.join(codex,'config.toml'),'utf8')).toBe(config);
+ }finally{await app.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('account preservation is fixed on without a setting or entitlement detector',async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'paw-fixed-identity-')),directory=path.join(root,'codex'),profile=path.join(root,'paw');await mkdir(directory);await seedMatureCompanion(profile);
  const original='model="gpt-existing"\n[features]\nremote_models=false\napps=false\nplugins=false\n',login=JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:'DUMMY_ACCESS',id_token:'DUMMY_ID'}});
@@ -42,7 +82,7 @@ test('account preservation is fixed on without a setting or entitlement detector
   await app.evaluate(({app})=>{const path=process.getBuiltinModule('path'),req=process.getBuiltinModule('module').createRequire(path.join(app.getAppPath(),'package.json'));req('./electron/codex-provider-titles.mjs').CodexTitleClient.prototype.request=globalThis.originalModelListRequest;delete globalThis.originalModelListRequest;});
   await panel().getByRole('button',{name:'刷新状态',exact:true}).click();await expect(panel().locator('.codex-model-selection')).toHaveText('配置模型在客户端列表中，此连接保留聊天框的模型选择。');
   await panel().getByRole('button',{name:'选用 ChatGPT',exact:true}).click();await expect(panel().locator('.codex-current')).toContainText('ChatGPT / OpenAI');
-  config=parse(await readFile(path.join(directory,'config.toml'),'utf8'));expect(config.openai_base_url).toBeUndefined();expect(config.model).toBe('gpt-existing');expect(await readFile(path.join(directory,'auth.json'),'utf8')).toBe(login);
+  config=parse(await readFile(path.join(directory,'config.toml'),'utf8'));expect(new URL(config.openai_base_url).pathname).toMatch(/\/openai\/v1$/);expect(config.model).toBe('gpt-existing');expect(await readFile(path.join(directory,'auth.json'),'utf8')).toBe(login);
  }finally{await app?.close();await rm(root,{recursive:true,force:true});}
 });
 
@@ -171,7 +211,7 @@ test('native pet menu and independent Codex Provider form preserve current login
     await panel.getByRole('button',{name:'确认删除',exact:true}).click();
     await expect(panel.getByRole('button',{name:'选用 Desktop test provider',exact:true})).toHaveCount(0);providerId=null;
     await expect(panel.locator('.codex-current')).toContainText('ChatGPT / OpenAI · gpt-existing');
-    const restored=parse(await readFile(path.join(codexHome,'config.toml'),'utf8'));delete restored.model_providers;expect(restored).toEqual(parse(config));expect(await readFile(path.join(codexHome,'auth.json'),'utf8')).toBe(login);expect(errors).toEqual([]);
+    const restored=parse(await readFile(path.join(codexHome,'config.toml'),'utf8'));delete restored.model_providers;expect(new URL(restored.openai_base_url).pathname).toMatch(/\/openai\/v1$/);delete restored.openai_base_url;expect(restored).toEqual(parse(config));expect(await readFile(path.join(codexHome,'auth.json'),'utf8')).toBe(login);expect(errors).toEqual([]);
   } finally {
     for(const socket of refreshSockets)socket.destroy();if(refreshServer.listening)await new Promise(resolve=>refreshServer.close(resolve));
     if(providerId){const {MacKeychain}=await import('../electron/codex-accounts.mjs');await new MacKeychain().remove(providerId);}
@@ -210,4 +250,42 @@ test('Codex hub groups provider tokens, keeps unknown prices explicit and hides 
   await home.locator('.codex-tabs').getByRole('button',{name:'高级设置',exact:true}).click();await expect(home.getByText(path.join(codex,'config.toml'),{exact:true})).not.toBeVisible();
   await home.getByText('查看本机路径',{exact:true}).first().click();await expect(home.getByText(path.join(codex,'config.toml'),{exact:true})).toBeVisible();
  }finally{await app.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('official forwarding uses Electron networking and returns decoded responses with consistent headers',async()=>{
+ const {createServer}=await import('node:http'),{gzipSync}=await import('node:zlib');
+ const root=await mkdtemp(path.join(os.tmpdir(),'paw-official-network-'));await seedMatureCompanion(root);const seen=[],bodies=[];
+ const plain='event: response.completed\ndata: {"ok":true}\n\n',encoded=gzipSync(Buffer.from(plain));
+ const server=createServer((req,res)=>{seen.push(req.headers);const chunks=[];req.on('data',b=>chunks.push(b));req.on('end',()=>{bodies.push(Buffer.concat(chunks).toString());res.writeHead(200,{'Content-Type':'text/event-stream','Content-Encoding':'gzip','Content-Length':encoded.length,'X-Request-ID':'official-network-test'});res.end(encoded);});});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:root,PAWPRINT_TEST_CODEX_HOME:path.join(root,'codex')}});
+ try{
+  const response=await app.evaluate(async({app,net},url)=>{
+   const path=process.getBuiltinModule('path'),req=process.getBuiltinModule('module').createRequire(path.join(app.getAppPath(),'package.json'));
+   const fetchOfficial=req('./electron/codex-proxy-http.mjs').officialRequester(net.fetch.bind(net));
+   const response=await fetchOfficial(url,{method:'POST',redirect:'manual',headers:{authorization:'Bearer dummy-native-login','chatgpt-account-id':'dummy-account','content-length':'2','content-type':'application/json','sec-fetch-mode':'cors'},body:Buffer.from('{}')});
+   return {status:response.status,headers:Object.fromEntries(response.headers),body:await new Response(response.body).text()};
+  },`http://127.0.0.1:${server.address().port}/responses`);
+  expect(response.status).toBe(200);expect(response.body).toBe(plain);expect(response.headers['content-encoding']).toBeUndefined();expect(response.headers['content-length']).toBeUndefined();expect(response.headers['x-request-id']).toBe('official-network-test');
+  expect(seen[0].authorization).toBe('Bearer dummy-native-login');expect(seen[0]['chatgpt-account-id']).toBe('dummy-account');expect(seen[0].cookie).toBeUndefined();
+  // Reproduce the user's full route: a MiMo URL, an old OpenAI-bound chat,
+  // compressed native input, bridge-generated Content-Length, Chromium fetch.
+  const routed=await app.evaluate(async({app,net},origin)=>{
+   const path=process.getBuiltinModule('path'),req=process.getBuiltinModule('module').createRequire(path.join(app.getAppPath(),'package.json'));
+   const {CodexIdentityBridge}=req('./electron/codex-identity-bridge.mjs'),{officialRequester}=req('./electron/codex-proxy-http.mjs');
+   let failure;const fetchOfficial=officialRequester(net.fetch.bind(net));
+   const bridge=new CodexIdentityBridge({dataDirectory:path.join(app.getPath('userData'),'official-routing-fixture'),keychain:{get:async()=>{throw Error('must not read a vendor key');}},officialFetchImpl:async(...args)=>{try{return await fetchOfficial(...args);}catch(e){failure={message:e.message,headers:[...new Headers(args[1].headers).keys()]};throw e;}}});
+   const vendor='pawprint_'+'a'.repeat(32),thread='01a0f1ea-4534-7651-b950-000000000111';
+   bridge.configure([{id:vendor,model:'mimo-v2.6-pro',modelSelection:'fixed',baseUrl:'http://127.0.0.1:1/unreachable'}],{officialBaseUrl:origin});
+   try{
+    await bridge.prepareBindings({directory:app.getPath('userData'),currentProviderId:vendor});await bridge.bindings.bind(thread,'openai');await bridge.start();
+    const input={model:'gpt-6.1-sol',input:'本机隔离测试'},body=process.getBuiltinModule('zlib').zstdCompressSync(Buffer.from(JSON.stringify(input)));
+    const response=await fetch(bridge.baseUrl(vendor)+'/responses',{method:'POST',headers:{'thread-id':thread,authorization:'Bearer dummy-native-login','chatgpt-account-id':'dummy-account','content-encoding':'zstd','content-type':'application/json'},body});
+    const text=await response.text();await bridge.routeEvidence.queue;
+    const bindings=await bridge.bindings.snapshot();return {status:response.status,body:text,binding:bindings[thread].providerId,...(failure?{failure}:{})};
+   }finally{await bridge.close();}
+  },`http://127.0.0.1:${server.address().port}`);
+  expect(routed).toEqual({status:200,body:plain,binding:'openai'});
+  expect(seen).toHaveLength(2);expect(seen[1].authorization).toBe('Bearer dummy-native-login');expect(seen[1]['chatgpt-account-id']).toBe('dummy-account');expect(seen[1]['content-encoding']).toBeUndefined();
+  expect(JSON.parse(bodies[1])).toEqual({model:'gpt-6.1-sol',input:'本机隔离测试'});expect(Number(seen[1]['content-length'])).toBe(Buffer.byteLength(bodies[1]));
+ }finally{await app.close();server.closeAllConnections();await new Promise(r=>server.close(r));await rm(root,{recursive:true,force:true});}
 });

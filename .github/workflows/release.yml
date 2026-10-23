@@ -26,6 +26,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: test "$GITHUB_REF_NAME" = "v$(node -p 'require("./package.json").version')"
       - run: npm test
+      - name: Test macOS menu-bar association repair
+        run: python3 -m unittest discover -s tests -p test_macos_menubar_association.py
       - name: Select signing mode
         run: |
           if [ -n "$CSC_LINK" ] && [ -n "$CSC_KEY_PASSWORD" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ] && [ -n "$APPLE_API_KEY_P8_BASE64" ] && [ -n "$EXPECTED_TEAM_ID" ]; then
@@ -67,8 +69,10 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' release/mac-arm64/Pawprint.app/Contents/Info.plist)" = "$VERSION"
           mkdir -p artifacts
           ditto -c -k --sequesterRsrc --keepParent release/mac-arm64/Pawprint.app "artifacts/Pawprint-$VERSION-mac-arm64.zip"
+          cp scripts/macos-menubar-association.py artifacts/Pawprint-macos-menubar-association.py
           cd artifacts
           shasum -a 256 "Pawprint-$VERSION-mac-arm64.zip" > "Pawprint-$VERSION-mac-arm64.zip.sha256"
+          shasum -a 256 Pawprint-macos-menubar-association.py > Pawprint-macos-menubar-association.py.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: pawprint-mac-arm64

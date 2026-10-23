@@ -1,6 +1,7 @@
 import {CodexProviderTitles} from "./codex-provider-titles.mjs";
 import {CodexAccounts,MacKeychain} from "./codex-accounts.mjs";
 import {CodexIdentityBridge} from './codex-identity-bridge.mjs';
+import {officialRequester} from './codex-proxy-http.mjs';
 import {refreshCodexProviderIndicator} from './codex-client-refresh.mjs';
 import {readCodexSessionSources} from './codex-session-sources.mjs';
 import {ApprovalObserver} from './approval-observer.mjs';
@@ -39,6 +40,7 @@ import {
   systemPreferences,
   powerMonitor,
   nativeTheme,
+  net as electronNet,
 } from "electron";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -422,7 +424,7 @@ async function getCodexAccounts() {
   const directory = managedCodexHome();
   if (!codexAccountsPromise) codexAccountsPromise = (async () => {
     const keychain=new MacKeychain();
-    identityBridge=process.platform==='darwin'?new CodexIdentityBridge({dataDirectory:app.getPath('userData'),keychain,onRoute:()=>{void providerTitles?.refresh();}}):null;
+    identityBridge=process.platform==='darwin'?new CodexIdentityBridge({dataDirectory:app.getPath('userData'),keychain,officialFetchImpl:officialRequester(electronNet.fetch.bind(electronNet)),onRoute:()=>{void providerTitles?.refresh();}}):null;
     const manager = new CodexAccounts({directory, dataDirectory: app.getPath('userData'),keychain,identityBridge,refreshClient:refreshCodexProviderIndicator,onSelection:updateCodexTrayConnection});
     await manager.load();codexAccounts=manager;
     updateCodexTrayConnection(await manager.status());

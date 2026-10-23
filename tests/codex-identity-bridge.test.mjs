@@ -15,7 +15,9 @@ async function setup(t,respond){
  const upstream=http.createServer((req,res)=>{let body='';req.on('data',b=>body+=b);req.on('end',()=>{seen.push({headers:req.headers,path:req.url,body});if(respond){respond(req,res,body);return;}if(req.url.includes('redirect')){res.writeHead(302,{Location:'https://never.example'});res.end();return;}res.writeHead(200,{'Content-Type':req.url.endsWith('compact')?'application/json':'text/event-stream','Set-Cookie':'UPSTREAM_COOKIE'});res.end(req.url.endsWith('compact')?'{}':'event: response.completed\ndata: {"ok":true}\n\n');});});
  await new Promise(r=>upstream.listen(0,'127.0.0.1',r));
  const keychain={get:async account=>{assert.equal(account,id);return 'THIRD_PARTY_KEY';}};
- const bridge=new CodexIdentityBridge({dataDirectory:directory,keychain});
+ // Transport-only fixtures deliberately bypass binding setup; binding tests
+ // below use the production default and verify fail-closed initialization.
+ const bridge=new CodexIdentityBridge({dataDirectory:directory,keychain,requireBindings:false});
  const provider={id,name:'Local test provider',model:'test-model',modelSelection:'fixed',baseUrl:`http://127.0.0.1:${upstream.address().port}/v1`};bridge.configure([provider]);await bridge.start();
  t.after(async()=>{await bridge.close();upstream.closeAllConnections();await new Promise(r=>upstream.close(r));await rm(directory,{recursive:true,force:true});});
  return {directory,seen,bridge,provider,keychain};
@@ -179,7 +181,7 @@ test('unknown routes, websites and removed providers cannot use the bridge',asyn
 test('bridge address survives Pawprint restarts and an occupied port is never silently replaced',async t=>{
  const f=await setup(t),url=f.bridge.baseUrl(id);
  const occupied=new CodexIdentityBridge({dataDirectory:f.directory,keychain:f.keychain});await assert.rejects(occupied.start(),/未能启动/);
- await f.bridge.close();const restarted=new CodexIdentityBridge({dataDirectory:f.directory,keychain:f.keychain});t.after(()=>restarted.close());restarted.configure([f.provider]);await restarted.start();assert.equal(restarted.baseUrl(id),url);
+ await f.bridge.close();const restarted=new CodexIdentityBridge({dataDirectory:f.directory,keychain:f.keychain,requireBindings:false});t.after(()=>restarted.close());restarted.configure([f.provider]);await restarted.start();assert.equal(restarted.baseUrl(id),url);
  const r=await fetch(url+'/responses',{method:'POST',body:'{}'});assert.equal(r.status,200);await r.text();
 });
 test('redirects and credential errors do not leak keys or follow an unapproved destination',async t=>{
@@ -191,4 +193,33 @@ test('closing Pawprint aborts an in-flight upstream request instead of leaving i
  const f=await setup(t);let started,aborted=false;const ready=new Promise(r=>started=r);
  f.bridge.fetchImpl=async(_,options)=>new Promise((resolve,reject)=>{options.signal.addEventListener('abort',()=>{aborted=true;reject(Error('cancelled'));},{once:true});started();});
  const request=fetch(f.bridge.baseUrl(id)+'/responses',{method:'POST',body:'{}'}).catch(()=>null);await ready;await f.bridge.close();await request;assert.equal(aborted,true);assert.equal(f.seen.length,0);
+});
+
+test('bound services survive bridge restart and route through either default URL without credential leakage',async t=>{
+ const f=await setup(t),officialThread='01a0f1ea-4534-7651-b950-000000000101',vendorThread='01a0f1ea-4534-7651-b950-000000000102';
+ const options={officialBaseUrl:f.provider.baseUrl.replace('/v1','/official/v1')};
+ f.bridge.configure([f.provider],options);await f.bridge.prepareBindings({directory:f.directory,currentProviderId:'openai'});
+ await f.bridge.bindings.bind(officialThread,'openai');
+ const send=async(bridge,route,thread,endpoint='responses')=>{const r=await fetch(bridge.baseUrl(route)+'/'+endpoint,{method:'POST',headers:{'thread-id':thread,authorization:'Bearer PRIVATE_NATIVE_LOGIN','chatgpt-account-id':'PRIVATE_ACCOUNT','x-openai-workspace-id':'PRIVATE_WORKSPACE',cookie:'PRIVATE_COOKIE'},body:JSON.stringify({model:'gpt-picker'})});await r.text();return r.status;};
+ assert.equal(await send(f.bridge,id,officialThread),200);assert.equal(f.seen.at(-1).path,'/official/v1/responses');assert.equal(f.seen.at(-1).headers.authorization,'Bearer PRIVATE_NATIVE_LOGIN');assert.equal(f.seen.at(-1).headers['chatgpt-account-id'],'PRIVATE_ACCOUNT');assert.equal(f.seen.at(-1).headers['x-openai-workspace-id'],'PRIVATE_WORKSPACE');assert.equal(f.seen.at(-1).headers.cookie,undefined);assert.equal(JSON.parse(f.seen.at(-1).body).model,'gpt-picker');
+ assert.equal(await send(f.bridge,id,vendorThread),200);assert.equal(f.seen.at(-1).headers.authorization,'Bearer THIRD_PARTY_KEY');assert.equal(f.seen.at(-1).headers['chatgpt-account-id'],undefined);
+ await f.bridge.close();
+ const restarted=new CodexIdentityBridge({dataDirectory:f.directory,keychain:f.keychain});t.after(()=>restarted.close());restarted.configure([f.provider],options);await restarted.start();await restarted.prepareBindings({directory:f.directory,currentProviderId:'openai'});
+ assert.equal(await send(restarted,'openai',vendorThread),200);assert.equal(f.seen.at(-1).path,'/v1/responses');assert.equal(JSON.parse(f.seen.at(-1).body).model,'test-model');assert.ok(!JSON.stringify(f.seen.at(-1).headers).includes('PRIVATE_'));
+ assert.equal(await send(restarted,id,officialThread,'responses/compact'),200);assert.equal(f.seen.at(-1).path,'/official/v1/responses/compact');
+ restarted.configure([],options);const count=f.seen.length;assert.equal(await send(restarted,'openai',vendorThread),410);assert.equal(f.seen.length,count);
+ assert.equal(await send(restarted,id,officialThread),200);
+ const missing=await fetch(restarted.baseUrl('openai')+'/responses',{method:'POST',body:'{}'});assert.equal(missing.status,409);await missing.text();
+});
+
+test('an uninitialized or failed binding load cannot fall through to the URL provider',async t=>{
+ const directory=await mkdtemp(path.join(os.tmpdir(),'paw-binding-fail-closed-'));let keyReads=0;
+ const bridge=new CodexIdentityBridge({dataDirectory:directory,keychain:{get:async()=>{keyReads++;throw Error('must not read a provider key');}}});
+ t.after(async()=>{await bridge.close();await rm(directory,{recursive:true,force:true});});
+ bridge.configure([{id,model:'mimo-test',modelSelection:'fixed',baseUrl:'http://127.0.0.1:9/unreachable'}]);await bridge.start();
+ const check=async()=>{for(const route of [id,'openai']){const response=await fetch(bridge.baseUrl(route)+'/responses',{method:'POST',body:'{}'});assert.equal(response.status,503);assert.match(await response.text(),/绑定尚未就绪/);}assert.equal(keyReads,0);};
+ await check();
+ await assert.rejects(bridge.prepareBindings({directory,currentProviderId:id,requireExisting:true}),/停止转发/);await check();
+ await writeFile(bridge.bindings.file,'invalid bindings');
+ await assert.rejects(bridge.prepareBindings({directory,currentProviderId:id,requireExisting:true}),/停止转发/);await check();
 });

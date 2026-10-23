@@ -5,6 +5,7 @@ import {validWorkId} from '../core/work.mjs';
 
 const fileFor=directory=>path.join(directory,'codex-route-evidence.json');
 const turnsFile=directory=>path.join(directory,'codex-turn-routes.json');
+const validProvider=id=>id==='openai'||/^pawprint_[a-f0-9]{32}$/.test(id);
 export function nativeTurnId(headers){
   try{
     const value=headers['x-codex-turn-metadata'];if(typeof value!=='string'||value.length>8192)return null;
@@ -19,7 +20,7 @@ export async function readTurnRoutes(directory){
     const data=JSON.parse(await readFile(file,'utf8'));
     return Object.fromEntries(Object.entries(data).filter(([key,r])=>{
       const [thread,turn,...extra]=key.split(':');
-      return !extra.length&&validWorkId(thread)&&validWorkId(turn)&&/^pawprint_[a-f0-9]{32}$/.test(r?.providerId)&&typeof r.model==='string'&&r.model.length>0&&r.model.length<=160&&!/[\x00-\x1f]/.test(r.model)&&Number.isSafeInteger(r.at)&&r.at>=0&&(r.ambiguous===undefined||typeof r.ambiguous==='boolean');
+      return !extra.length&&validWorkId(thread)&&validWorkId(turn)&&validProvider(r?.providerId)&&typeof r.model==='string'&&r.model.length>0&&r.model.length<=160&&!/[\x00-\x1f]/.test(r.model)&&Number.isSafeInteger(r.at)&&r.at>=0&&(r.ambiguous===undefined||typeof r.ambiguous==='boolean');
     }));
   }catch{return {};}
 }
@@ -29,7 +30,7 @@ export async function readRouteEvidence(directory){
     const file=fileFor(directory),info=await lstat(file);
     if(!info.isFile()||info.isSymbolicLink()||info.size>512*1024)return {};
     const data=JSON.parse(await readFile(file,'utf8'));
-    return Object.fromEntries(Object.entries(data).filter(([id,r])=>validWorkId(id)&&/^pawprint_[a-f0-9]{32}$/.test(r?.providerId)&&typeof r.model==='string'&&r.model.length>0&&r.model.length<=160&&!/[\x00-\x1f]/.test(r.model)&&Number.isSafeInteger(r.at)&&r.at>=0));
+    return Object.fromEntries(Object.entries(data).filter(([id,r])=>validWorkId(id)&&validProvider(r?.providerId)&&typeof r.model==='string'&&r.model.length>0&&r.model.length<=160&&!/[\x00-\x1f]/.test(r.model)&&Number.isSafeInteger(r.at)&&r.at>=0));
   }catch{return {};}
 }
 
@@ -39,7 +40,7 @@ export async function readRouteEvidence(directory){
 export class CodexRouteEvidence{
   constructor(directory){this.directory=directory;this.queue=Promise.resolve();}
   record({threadId,providerId,model}){
-    if(!validWorkId(threadId)||!/^pawprint_[a-f0-9]{32}$/.test(providerId)||typeof model!=='string'||!model||model.length>160||/[\x00-\x1f]/.test(model))return Promise.resolve();
+    if(!validWorkId(threadId)||!validProvider(providerId)||typeof model!=='string'||!model||model.length>160||/[\x00-\x1f]/.test(model))return Promise.resolve();
     const task=this.queue.then(async()=>{
       const rows=await readRouteEvidence(this.directory);
       rows[threadId]={providerId,model,at:Date.now()};
@@ -53,7 +54,7 @@ export class CodexRouteEvidence{
   // Separate successful HTTP delivery from the attempted-route title marker.
   // Token quantities still come from Codex's own metering records, not this map.
   recordTurn({threadId,turnId,providerId,model}){
-    if(!validWorkId(threadId)||!validWorkId(turnId)||!/^pawprint_[a-f0-9]{32}$/.test(providerId)||typeof model!=='string'||!model||model.length>160||/[\x00-\x1f]/.test(model))return Promise.resolve();
+    if(!validWorkId(threadId)||!validWorkId(turnId)||!validProvider(providerId)||typeof model!=='string'||!model||model.length>160||/[\x00-\x1f]/.test(model))return Promise.resolve();
     const at=Date.now();
     const task=this.queue.then(async()=>{
         this.turns??=await readTurnRoutes(this.directory);

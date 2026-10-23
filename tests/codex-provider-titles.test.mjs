@@ -68,3 +68,15 @@ test('a refresh event during an active scan is drained instead of waiting for th
  const service=new CodexProviderTitles({directory:dir,dataDirectory:dir,readCandidates:async()=>{reads++;if(reads===1)await paused;return [];}});t.after(()=>service.close());
  const first=service.refresh();service.refresh();release();await first;assert.equal(reads,2);
 });
+
+test('an observed official route removes only an owned provider prefix and retries a failed restoration',async t=>{
+ const dir=await directory(t);await writeFile(path.join(dir,'config.toml'),'[model_providers.sample]\nname="MiMo"\n');
+ let rows=[{id,providerId:'sample',runtimeProviderId:'openai',title:'Original'}],fail=false,writes=0;
+ const service=new CodexProviderTitles({directory:dir,dataDirectory:dir,readCandidates:async()=>rows,clientFactory:async()=>({request:async(method,p)=>{
+  if(method==='thread/read')return {thread:{id,modelProvider:'openai'}};
+  writes++;if(fail){fail=false;throw Error('isolated rename failure');}rows[0]={...rows[0],title:p.name};return {};
+ },close:async()=>{}})});t.after(()=>service.close());
+ await service.refresh();assert.equal(rows[0].title,'[MiMo] Original');rows[0].providerId='openai';fail=true;
+ await service.refresh();assert.equal(rows[0].title,'[MiMo] Original');await service.refresh();assert.equal(rows[0].title,'Original');
+ const before=writes;rows[0].title='[My tag] User title';await service.refresh();assert.equal(rows[0].title,'[My tag] User title');assert.equal(writes,before);
+});

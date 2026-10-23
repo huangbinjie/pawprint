@@ -14,7 +14,7 @@ async function fixture(t, original = '# My settings\nmodel = "gpt-original" # ke
   await writeFile(path.join(directory,'config.toml'),original); await writeFile(path.join(directory,'auth.json'),login);
   const secrets = new Map(), keychain = {set:async(id,key)=>secrets.set(id,key),get:async id=>{if(!secrets.has(id))throw Error('keychain unavailable');return secrets.get(id);},remove:async id=>secrets.delete(id)};
   let running = false;
-  const bridge={start:async()=>{},configure:()=>{},baseUrl:id=>`http://127.0.0.1:12345/local/${id}/v1`};
+  const bridge={sessionRouting:true,prepareBindings:async()=>{},start:async()=>{},configure:()=>{},baseUrl:id=>`http://127.0.0.1:12345/local/${id}/v1`};
   const manager = new CodexAccounts({readModels,directory,dataDirectory,keychain,identityBridge:bridge,running:async()=>running,platform:'darwin'});await manager.load();
   return {manager,directory,dataDirectory,secrets,setRunning:value=>running=value,original};
 }
@@ -25,7 +25,7 @@ test('switch round trip preserves unrelated settings, comments, login and exclud
   assert.ok(text.includes('[projects."/my/project"]\ntrust_level = "trusted"'));assert.ok(!text.includes(input.apiKey));
   assert.equal(await readFile(switched.backupPath,'utf8'),f.original);if(process.platform!=='win32')assert.equal((await stat(switched.backupPath)).mode & 0o777,0o600);
   assert.ok(!(await readFile(f.manager.stateFile,'utf8')).includes(input.apiKey));
-  await f.manager.switch('openai');const restored=parse(await readFile(f.manager.file,'utf8'));assert.ok(restored.model_providers[id]);delete restored.model_providers;assert.deepEqual(restored,parse(f.original));assert.ok((await readFile(f.manager.file,'utf8')).includes('model = "gpt-original" # keep'));
+  await f.manager.switch('openai');const restored=parse(await readFile(f.manager.file,'utf8'));assert.ok(restored.model_providers[id]);delete restored.model_providers;assert.equal(restored.openai_base_url,f.manager.identityBridge.baseUrl('openai'));delete restored.openai_base_url;assert.deepEqual(restored,parse(f.original));assert.ok((await readFile(f.manager.file,'utf8')).includes('model = "gpt-original" # keep'));
   assert.equal(await readFile(path.join(f.directory,'auth.json'),'utf8'),login);
 });
 test('model policy follows exact native list membership without changing OpenAI identity or adding settings',async t=>{
@@ -92,7 +92,7 @@ test('pending interrupted transaction resolves both before and after atomic conf
 test('deleting selected provider restores ChatGPT and removes config definition and secret',async t=>{
   const f=await fixture(t),id=(await f.manager.add(input)).providers[0].id;await f.manager.switch(id);
   const state=await f.manager.remove(id);assert.equal(state.selected,'openai');assert.equal(state.providers.length,0);assert.equal(state.providerNames[id],input.name);assert.equal(f.secrets.has(id),false);
-  assert.deepEqual(parse(await readFile(f.manager.file,'utf8')),parse(f.original));assert.equal(await readFile(path.join(f.directory,'auth.json'),'utf8'),login);
+  const restored=parse(await readFile(f.manager.file,'utf8'));assert.equal(restored.openai_base_url,f.manager.identityBridge.baseUrl('openai'));delete restored.openai_base_url;assert.deepEqual(restored,parse(f.original));assert.equal(await readFile(path.join(f.directory,'auth.json'),'utf8'),login);
 });
 test('selected provider deletion refuses external config changes and preserves credentials',async t=>{
   const f=await fixture(t),id=(await f.manager.add(input)).providers[0].id;await f.manager.switch(id);
@@ -179,20 +179,20 @@ test('account services are always preserved without a setting or entitlement loo
  assert.equal(typeof f.manager.setPreserveDot,'undefined');assert.equal(typeof f.manager.setConnectionMode,'undefined');assert.equal(typeof f.manager.refreshDotAccess,'undefined');
  assert.equal(await readFile(path.join(f.directory,'auth.json'),'utf8'),login);
 });
-test('official selection restores the original model and address even after a routed model-picker edit',async t=>{
+test('official selection keeps the original upstream behind the session router after picker edits and deletion',async t=>{
  const f=await fixture(t,'model="official-model"\nopenai_base_url="https://original.example/v1"\n[features]\nmemories=true\n');
  const id=(await f.manager.add(input)).providers[0].id;await f.manager.switch(id);
  await writeFile(f.manager.file,(await readFile(f.manager.file,'utf8')).replace('example-model','changed-custom-model'));
  await f.manager.switch('openai');const config=parse(await readFile(f.manager.file,'utf8'));
- assert.equal(config.model,'official-model');assert.equal(config.openai_base_url,'https://original.example/v1');assert.equal(config.features.memories,true);
- await f.manager.switch(id);await f.manager.remove(id);assert.equal(parse(await readFile(f.manager.file,'utf8')).openai_base_url,'https://original.example/v1');
+ assert.equal(config.model,'official-model');assert.equal(config.openai_base_url,f.manager.identityBridge.baseUrl('openai'));assert.equal(f.manager.state.officialBaseUrl,'https://original.example/v1');assert.equal(config.features.memories,true);
+ await f.manager.switch(id);await f.manager.remove(id);assert.equal(parse(await readFile(f.manager.file,'utf8')).openai_base_url,f.manager.identityBridge.baseUrl('openai'));assert.equal(f.manager.state.officialBaseUrl,'https://original.example/v1');
 });
 test('missing login or failed bridge never silently switches to direct provider authentication',async t=>{
  const f=await fixture(t),id=(await f.manager.add(input)).providers[0].id,before=await readFile(f.manager.file,'utf8');
  await writeFile(path.join(f.directory,'auth.json'),'no-login');await assert.rejects(f.manager.switch(id),/登录 ChatGPT/);assert.equal(await readFile(f.manager.file,'utf8'),before);
  await writeFile(path.join(f.directory,'auth.json'),login);f.manager.identityBridge.start=async()=>{throw Error('occupied');};
  await assert.rejects(f.manager.switch(id),/occupied/);assert.equal(await readFile(f.manager.file,'utf8'),before);
- assert.equal((await f.manager.switch('openai')).selected,'openai');
+ await assert.rejects(f.manager.switch('openai'),/occupied/);
 });
 test('legacy opt-outs migrate on startup without changing login, selected upstream or official baseline',async t=>{
  for(const mode of ['api','identity','dot']){

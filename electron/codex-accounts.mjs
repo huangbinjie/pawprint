@@ -51,7 +51,7 @@ export function patchConfig(text, provider, baseline, providers = provider ? [pr
   if(dotCompatible&&provider&&!identityBridge)fail('Dot 兼容模式需要本地账号连接服务。');
   const root = provider
     ? `model = ${q(provider.model)}\nmodel_provider = ${q(dotCompatible?'openai':provider.id)}\n`+(dotCompatible?`openai_base_url = ${q(identityBridge.baseUrl(provider.id))}\n`:(baseline.openai_base_url||''))
-    : keys.map(k => baseline[k] || '').join('');
+    : keys.map(k => k==='openai_base_url'&&identityBridge?.sessionRouting?`openai_base_url = ${q(identityBridge.baseUrl('openai'))}\n`:baseline[k] || '').join('');
   // Keep provider definitions available for existing chats across live switches.
   const definitions = providers.map(p => `[model_providers.${p.id}]\nname = ${q(p.name)}\nbase_url = ${q(identityBridge?identityBridge.baseUrl(p.id):p.baseUrl)}\nwire_api = "responses"\n`+(identityBridge?'requires_openai_auth = true\nsupports_websockets = false\n':`[model_providers.${p.id}.auth]\ncommand = "/usr/bin/security"\nargs = ["find-generic-password", "-s", ${q(KEYCHAIN_SERVICE)}, "-a", ${q(p.id)}, "-w"]\ntimeout_ms = 30000\nrefresh_interval_ms = 0\n`)).join('');
   const block = definitions ? `${START}\n${definitions}${END}\n` : '';
@@ -169,7 +169,7 @@ export class CodexAccounts {
     try{await this.modelListPending;}finally{this.modelListPending=null;}
   }
   configureBridge(providers=this.state.providers) {
-    this.identityBridge?.configure(providers.map(p=>({...p,modelSelection:modelSelection(p,this.modelList)})));
+    this.identityBridge?.configure(providers.map(p=>({...p,modelSelection:modelSelection(p,this.modelList)})),{officialBaseUrl:this.state.officialBaseUrl||'https://chatgpt.com/backend-api/codex'});
   }
   async status({refreshModels=false}={}) {
     const text = await optional(this.file), doc = parse(text);
@@ -180,9 +180,9 @@ export class CodexAccounts {
     return { supported: this.platform === 'darwin', providerNames, providers: this.state.providers.map(p=>({...p,modelSelection:modelSelection(p,this.modelList)})), modelListStatus:this.modelList.status, selected: id, model: doc.model || null, running: this.platform === 'darwin' ? await this.running() : false, configPath: this.file, backupPath: this.state.backupPath || null,
       clientRefresh: this.clientRefresh?.providerId===id||this.clientRefresh?.status==='config-changed' ? this.clientRefresh : null,
       conflict:configurationConflict(text,this.state),
-      identityMode:this.state.identityBridgeVersion===1?'chatgpt':'provider',identityError:this.identityError||null,
+      identityMode:this.state.identityBridgeVersion>=1?'chatgpt':'provider',identityError:this.identityError||null,
       dotCompatible:id!=='openai'&&doc.model_provider==='openai',runtimeProvider:doc.model_provider||'openai',
-      notice: '默认配置已选择；运行中的会话不会自动切换。请新建会话并确认客户端的 Provider 与模型，客户端界面可能仍保留原选择。' };
+      notice: '默认连接已选择；已有会话保持绑定服务，重载后也不改变。请新建会话使用当前默认连接。' };
   }
   add(input) { return this.serial(async () => {
     this.supported(); await this.status(); const provider = { ...validateProvider(input), id: 'pawprint_' + randomUUID().replaceAll('-', '') };
@@ -207,21 +207,22 @@ export class CodexAccounts {
     }
     return this.status();
   }); }
-  switch(id,{reviewId}={}) { return this.serial(async () => {
-    this.supported(); await this.load(); return this.applySelection(id, this.state.providers,reviewId);
+  switch(id,{reviewId,preserveModel=false}={}) { return this.serial(async () => {
+    this.supported(); await this.load(); return this.applySelection(id, this.state.providers,reviewId,preserveModel);
   }); }
   async prepareIdentityConnection() {
-    if(!this.identityBridge||!this.state.providers.length)return;
+    if(!this.identityBridge||(!this.state.providers.length&&this.state.identityBridgeVersion!==2))return;
     await this.refreshModelList();this.configureBridge();
-    if(this.state.identityBridgeVersion===1)await this.identityBridge.start();
+    if(this.state.identityBridgeVersion>=1)await this.identityBridge.start();
     const status=await this.status();
-    if(this.state.identityBridgeVersion===1&&!status.conflict&&(status.selected==='openai'||status.dotCompatible)){
+    if(this.state.identityBridgeVersion===2&&!status.conflict&&(status.selected==='openai'||status.dotCompatible)){
+      await this.identityBridge.prepareBindings({directory:this.directory,currentProviderId:status.selected,requireExisting:true});
       // Existing compatible routes only need the obsolete preferences removed.
       // Preserve any newer model chosen in the client instead of reapplying it.
       if(Object.hasOwn(this.state,'preserveDot')||Object.hasOwn(this.state,'connectionMode'))await this.save();
       return;
     }
-    if(this.state.managed&&!status.conflict&&await hasFileChatGPTLogin(this.directory))await this.switch(status.selected);
+    if(this.state.managed&&!status.conflict&&await hasFileChatGPTLogin(this.directory))await this.switch(status.selected,{preserveModel:true});
   }
   async finishSelection(id, expected) {
     let status='config-changed';
@@ -234,7 +235,7 @@ export class CodexAccounts {
     this.clientRefresh={providerId:id,status,configurationVerified:status!=='config-changed',indicatorVerified:false,notice:providerRefreshNotice(status)};
     return this.status();
   }
-  async applySelection(id, providers,reviewId) {
+  async applySelection(id, providers,reviewId,preserveModel=false) {
     const provider = id === 'openai' ? null : providers.find(p => p.id === id);
     if (id !== 'openai' && !provider) fail('Provider 不存在。');
     if (provider) await this.keychain.get(id);
@@ -253,24 +254,34 @@ export class CodexAccounts {
           fail('Provider 选择或连接配置已被外部修改，已取消覆盖。请检查配置与备份。');
         // Codex's model picker legitimately updates the root model without
         // changing the connection. Do not treat that as a provider conflict.
-        if (selectedProvider(doc,this.state)==='openai' && this.state.baseline) this.state.baseline={...current.roots};
+        if (selectedProvider(doc,this.state)==='openai' && this.state.baseline) this.state.baseline={...current.roots,...(this.state.identityBridgeVersion===2?{openai_base_url:this.state.baseline.openai_base_url}: {})};
       }
       if (!this.state.baseline) {
         if ((doc.model_provider || 'openai') !== 'openai' || current.block) fail('首次使用需要当前选择为 OpenAI/ChatGPT，不能覆盖已有自定义 Provider。');
         this.state.baseline = current.roots;
       }
       let bridge=null;
-      if(this.identityBridge&&providers.length&&await hasFileChatGPTLogin(this.directory)){
-        try{await this.identityBridge.start();bridge=this.identityBridge;this.identityError=null;}catch(e){this.identityError=e.message;if(id!=='openai')throw e;}
+      if(this.identityBridge&&(providers.length||this.state.identityBridgeVersion===2)&&await hasFileChatGPTLogin(this.directory)){
+        try{await this.identityBridge.start();bridge=this.identityBridge;this.identityError=null;}catch(e){this.identityError=e.message;if(id!=='openai'||this.identityBridge.sessionRouting)throw e;}
       }
+      if(this.state.identityBridgeVersion===2&&!bridge)fail('会话绑定需要本地连接服务和 ChatGPT 登录，已取消切换。');
       if(provider&&!bridge)fail('无法建立账号服务连接，请先在 Codex 登录 ChatGPT，并保持 Pawprint 运行。');
-      const after = patchConfig(before, provider, this.state.baseline, providers,bridge,true);
+      if(bridge?.sessionRouting){
+        const baselineUrl=parse(this.state.baseline.openai_base_url||'').openai_base_url;
+        const officialBaseUrl=this.state.officialBaseUrl||baselineUrl||(doc.chatgpt_base_url||'https://chatgpt.com/backend-api').replace(/\/$/,'')+'/codex';
+        const url=new URL(officialBaseUrl);
+        if(url.username||url.password||url.search||url.hash||!(url.protocol==='https:'||(url.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(url.hostname)))||officialBaseUrl.startsWith(bridge.baseUrl('openai').split('/openai/v1')[0]))fail('原官方连接地址无效，已取消切换。');
+        await bridge.prepareBindings({directory:this.directory,currentProviderId:selectedProvider(doc,this.state),requireExisting:this.state.identityBridgeVersion===2});
+        this.state.officialBaseUrl=officialBaseUrl;
+      }
+      this.configureBridge(providers);
+      const after = patchConfig(before, preserveModel&&provider&&typeof doc.model==='string'?{...provider,model:doc.model}:provider, this.state.baseline, providers,bridge,true);
       const managed={roots:roots(after),block:split(after).block,selected:id};
-      if (after === before) { this.state.providers = providers;this.state.identityBridgeVersion=bridge?1:0;this.state.managed=managed; await this.save();this.configureBridge(providers); return await this.finishSelection(id,after); }
+      if (after === before) { this.state.providers = providers;this.state.identityBridgeVersion=bridge?(bridge.sessionRouting?2:1):0;this.state.managed=managed; await this.save();this.configureBridge(providers); return await this.finishSelection(id,after); }
       const backups = path.join(this.directory, 'pawprint-account-backups'); await mkdir(backups, { recursive: true, mode: 0o700 });
       const backupPath = path.join(backups, `${Date.now()}-${randomUUID()}.toml`);
       await writeFile(backupPath, before, { mode: 0o600, flag: 'wx' });
-      const next = { ...this.state, providers, backupPath,identityBridgeVersion:bridge?1:0, managed };
+      const next = { ...this.state, providers, backupPath,identityBridgeVersion:bridge?(bridge.sessionRouting?2:1):0, managed };
       delete next.preserveDot;delete next.connectionMode;
       this.state.pending = { before, after, next }; await this.save();
       if (await optional(this.file) !== before) { delete this.state.pending; await this.save(); fail('配置发生变化，已取消切换。'); }

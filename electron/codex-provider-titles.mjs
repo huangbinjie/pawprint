@@ -98,7 +98,7 @@ export class CodexProviderTitles {
     let config={};try{config=parse(await readFile(path.join(this.directory,'config.toml'),'utf8'));}catch{throw Error('Cannot read provider names');}
     let accounts=[];try{accounts=JSON.parse(await readFile(path.join(this.dataDirectory,'codex-accounts.json'),'utf8')).providers||[];}catch{}
     const labelFor=id=>accounts.find(p=>p.id===id)?.name||config.model_providers?.[id]?.name||id;
-    const plans=candidates.map(row=>{const previous=this.state.edits[row.id];const title=previous&&previous.after===row.title?previous.before:row.title;return {...row,baseTitle:title,after:providerTitle(title,row.providerId,labelFor(row.providerId))};}).filter(r=>r.after&&r.after!==r.title);
+    const plans=candidates.map(row=>{const previous=this.state.edits[row.id],owned=previous&&(previous.after===row.title||previous.observedTitle===row.title);const title=owned?previous.before:row.title;return {...row,baseTitle:title,after:row.providerId==='openai'?(owned?title:null):providerTitle(title,row.providerId,labelFor(row.providerId))};}).filter(r=>r.after&&r.after!==r.title);
     if(!plans.length){this.publish({status:'watching',error:null});return;}
     let client;try{
       client=await this.clientFactory();
@@ -112,7 +112,7 @@ export class CodexProviderTitles {
         const fresh=(await this.readCandidates(this.directory)).find(r=>r.id===plan.id);
         if(!fresh||fresh.title!==plan.title||fresh.providerId!==plan.providerId)continue;
         // Persist intent first, so an interrupted update can be retried idempotently.
-        const record={before:plan.baseTitle,after:plan.after,providerId:plan.providerId,at:this.now()};
+        const record={before:plan.baseTitle,after:plan.after,observedTitle:plan.title,providerId:plan.providerId,at:this.now()};
         this.state.edits[plan.id]=record;await this.save();
         await client.request('thread/name/set',{threadId:plan.id,name:plan.after});
         this.publish({status:'watching',error:null,updated:this.value.updated+1});

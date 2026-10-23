@@ -52,7 +52,7 @@ try{
  // Simulate a stale GPT picker and the native GPT title-generation model.
  const custom=await call('thread/start',{cwd:root,model:'gpt-6.1-sol'});assert.equal(custom.modelProvider,'openai');assert.equal(custom.model,'gpt-6.1-sol');await turn(custom);assert.equal(requests.at(-1).model,'mimo-v2.6-pro');
  const title=await call('thread/start',{cwd:root,model:'gpt-6-luna',allowProviderModelFallback:true,ephemeral:true});await turn(title);assert.equal(requests.at(-1).model,'mimo-v2.6-pro');
- const compact=await fetch(bridge.baseUrl(vendor)+'/responses/compact',{method:'POST',body:JSON.stringify({model:'gpt-6.1-sol',input:[]})});assert.equal(compact.status,200);await compact.text();assert.equal(requests.at(-1).path,'/v1/responses/compact');assert.equal(requests.at(-1).model,'mimo-v2.6-pro');
+ const compact=await fetch(bridge.baseUrl(vendor)+'/responses/compact',{method:'POST',headers:{'thread-id':custom.thread.id},body:JSON.stringify({model:'gpt-6.1-sol',input:[]})});assert.equal(compact.status,200);await compact.text();assert.equal(requests.at(-1).path,'/v1/responses/compact');assert.equal(requests.at(-1).model,'mimo-v2.6-pro');
  await writeFile(path.join(root,'auth.json'),login);await manager.switch('openai');assert.equal(parse(await readFile(manager.file,'utf8')).model_catalog_json,undefined);assert.equal(await readFile(path.join(root,'auth.json'),'utf8'),login);
  await writeFile(path.join(root,'auth.json'),JSON.stringify({auth_mode:'apikey',OPENAI_API_KEY:'dummy-client-key'}));
  const official=await call('thread/start',{cwd:root,model:'gpt-6-astra'});await turn(official);assert.equal(requests.at(-1).path,'/official/v1/responses');assert.equal(requests.at(-1).model,'gpt-6-astra');

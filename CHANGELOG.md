@@ -2,6 +2,20 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.15.3 — 2026-10-23
+
+- macOS 会话持久绑定服务，切换默认 Provider 只影响新会话；重载、重启后保持绑定，删除原连接后明确报错。
+- 显示新会话默认服务与会话绑定来源；回到官方请求后恢复 Pawprint 自己标注的标题，保留手动标题。
+- 删除 Provider 使用居中确认弹窗，展示进度、失败提示并支持重试。
+- 修复官方转发因 Electron 不接受请求长度／Fetch Metadata 头而返回 502 的问题。
+- 附带需手动执行的 Tahoe 菜单栏关联修复工具：先备份、仅解除 Pawprint 错误关联、失败尝试回滚，不重启 Pawprint 或 Codex。
+- Persist chat services across reloads/restarts, clarify defaults and bound sources, and preserve manual titles.
+- Use a visible deletion dialog and fix official forwarding request framing that caused local 502 errors.
+- Include a manual, backed-up macOS menu-bar association repair tool; it does not reset the layout or restart Pawprint/Codex.
+- 升级后官方与第三方请求都需本机路由，请保持 Pawprint 运行；无转发记录的旧会话迁移到官方 GPT。
+
+完整中英文说明 / Full bilingual notes: [v0.15.3](docs/releases/v0.15.3.md).
+
 ## 0.15.2 — 2026-10-23
 
 - macOS 第三方连接按原生模型列表决定是否保留聊天框选模；MiMo 等列表外模型使用配置模型，支持运行中新增连接。

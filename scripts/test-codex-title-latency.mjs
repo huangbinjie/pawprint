@@ -24,7 +24,7 @@ try{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`;
  titles=new CodexProviderTitles({directory:root,dataDirectory});
  bridge=new CodexIdentityBridge({dataDirectory,keychain:{get:async()=> 'dummy-provider-key'},onRoute:()=>void titles.refresh()});
- bridge.configure([{id:providerId,baseUrl:origin+'/upstream/v1'}]);await bridge.start();
+ bridge.configure([{id:providerId,baseUrl:origin+'/upstream/v1',model:'gpt-6.1-sol',modelSelection:'picker'}]);await bridge.start();await bridge.prepareBindings({directory:root,currentProviderId:providerId});
  await writeFile(path.join(root,'config.toml'),`model="gpt-6.1-sol"\nmodel_provider="openai"\nopenai_base_url="${bridge.baseUrl(providerId)}"\nchatgpt_base_url="${origin}/backend-api"\ncli_auth_credentials_store="file"\n[features]\napps=false\nplugins=false\nremote_models=false\n[analytics]\nenabled=false\n`);
  await writeFile(path.join(root,'auth.json'),JSON.stringify({auth_mode:'apikey',OPENAI_API_KEY:'dummy-isolated-login'}),{mode:0o600});
  await writeFile(path.join(dataDirectory,'codex-accounts.json'),JSON.stringify({providers:[{id:providerId,name:'Test gateway'}]}));

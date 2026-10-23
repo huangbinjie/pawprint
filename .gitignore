@@ -5,6 +5,8 @@ test-results/
 playwright-report/
 .DS_Store
 *.log
+__pycache__/
+*.py[cod]
 work/
 
 # Local history and abandoned motion experiments are not release source.
