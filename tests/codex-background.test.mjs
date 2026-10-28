@@ -1,0 +1,95 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
+import os from 'node:os';import path from 'node:path';
+import {_electron as electron} from 'playwright';
+import {readBackgroundMedia,renderCodexBackground,verifyBackgroundEndpoint,backgroundCdpRequest} from '../electron/codex-background.mjs';
+
+test('image import rejects unsupported data and invalid dim at the boundary',async t=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),'paw-background-input-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const file=path.join(root,'fake.png');await writeFile(file,'<script>not an image</script>');
+  await assert.rejects(readBackgroundMedia(file),/PNG, JPEG, WebP, MP4 or WebM/);
+  await assert.rejects(readBackgroundMedia(file,-1),/dim/);
+  await assert.rejects(readBackgroundMedia(root),/Choose background media/);
+});
+
+test('background covers native shells, keeps input usable, and restores original surfaces',{skip:process.platform!=='darwin'},async t=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),'paw-background-render-'));let app;
+  t.after(async()=>{await app?.close();await rm(root,{recursive:true,force:true});});
+  app=await electron.launch({args:[path.resolve('tests/fixtures/codex-background-app.mjs')],env:{...process.env,PAWPRINT_BACKGROUND_TEST_PROFILE:root}});
+  const page=await app.firstWindow();await page.waitForSelector('main');
+  const port=Number((await readFile(path.join(root,'DevToolsActivePort'),'utf8')).split('\n')[0]);
+  const targets=await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+  const target=targets.find(x=>x.type==='page');
+  assert.equal(await backgroundCdpRequest(target.webSocketDebuggerUrl,'6*7'),42);
+  await assert.rejects(backgroundCdpRequest(target.webSocketDebuggerUrl,'throw new Error("test rejection")'),/test rejection/);
+  await assert.rejects(verifyBackgroundEndpoint(port),/not enabled|does not belong to the installed official client/);
+  const image=await app.evaluate(({nativeImage})=>nativeImage.createFromBitmap(Buffer.from([255,255,255,255]),{width:1,height:1}).toDataURL());
+  const apply=payload=>page.evaluate(`(${renderCodexBackground.toString()})(${JSON.stringify(payload)})`);
+  const before=await page.locator('main').evaluate(e=>getComputedStyle(e).backgroundColor);
+  await page.evaluate(()=>{const retained=document.createElement('div');retained.setAttribute('data-app-shell-active-page','false');retained.style.display='none';retained.innerHTML='<main data-retained data-app-shell-main-surface="default"></main>';document.querySelector('#root').prepend(retained);});
+  assert.deepEqual(await apply({media:image,dim:0.35}),{applied:true,width:1,height:1,mainVisible:true,composerVisible:true});
+  assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
+  assert.equal(await page.locator('main:not([data-retained])').evaluate(e=>getComputedStyle(e).color),'rgb(255, 255, 255)');
+  assert.equal(await page.locator('._fade_fixture').evaluate(e=>getComputedStyle(e).backgroundImage),'none','transcript fade is outside the composer footer');
+  assert.deepEqual(await page.locator('[data-markdown-text-style] p').first().evaluate(e=>({color:getComputedStyle(e).color,stroke:getComputedStyle(e).webkitTextStrokeWidth})),{color:'rgb(255, 255, 255)',stroke:'0px'});
+  assert.equal(await page.locator('#fixture-nested-markdown').evaluate(e=>getComputedStyle(e).backdropFilter),'blur(10px)');
+  assert.equal(await page.locator('#fixture-nested-markdown > div').evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)','nested markdown does not create a second plate');
+  assert.equal(await page.locator('[data-composer-surface-variant]').evaluate(e=>getComputedStyle(e).backdropFilter),'none','composer avoids video/backdrop recomposition');
+  assert.equal(await page.locator('[data-composer-surface-variant]').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(24, 31, 43)','moving video cannot create dark patches inside the composer');
+  assert.equal(await page.locator('.message-bubble').evaluate(e=>getComputedStyle(e).color),'rgb(255, 255, 255)');
+  assert.deepEqual(await page.locator('.messaging-root').evaluateAll(es=>es.map(e=>e.getAttribute('data-theme'))),['dark','dark']);
+  assert.equal(await page.locator('#fixture-settings').evaluate(e=>getComputedStyle(e).marginTop),'0px');
+  await page.getByRole('textbox').fill('Keep my draft');
+  await page.getByRole('button',{name:'Send'}).click();
+  assert.equal(await page.getByRole('textbox').inputValue(),'Keep my draft');
+  const pixel=await app.evaluate(async({BrowserWindow})=>{
+    const shot=await BrowserWindow.getAllWindows()[0].webContents.capturePage({x:500,y:350,width:1,height:1});return [...shot.getBitmap()];
+  });
+  assert.ok(pixel.slice(0,3).every(n=>n>100),'artwork is actually visible through the original opaque shells');
+  await assert.rejects(apply({media:'data:image/png;base64,AAAA'}));
+  assert.equal(await page.locator('#pawprint-codex-background').count(),1,'failed image decoding keeps the working background');
+  await apply({media:image,dim:0.5});assert.equal(await page.locator('#pawprint-codex-background').count(),1);
+  const movie=await page.evaluate(async()=>{
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=8;
+    const context=canvas.getContext('2d');context.fillStyle='white';context.fillRect(0,0,8,8);
+    const stream=canvas.captureStream(0),track=stream.getVideoTracks()[0],recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'}),chunks=[];
+    const ended=new Promise(resolve=>recorder.onstop=resolve);recorder.ondataavailable=e=>chunks.push(e.data);recorder.start();
+    let frame=0;const timer=setInterval(()=>{context.fillStyle=frame++%2?'white':'#ddd';context.fillRect(0,0,8,8);track.requestFrame();},50);
+    await new Promise(resolve=>setTimeout(resolve,650));recorder.stop();await ended;clearInterval(timer);stream.getTracks().forEach(track=>track.stop());
+    const reader=new FileReader(),ready=new Promise(resolve=>reader.onload=()=>resolve(reader.result));reader.readAsDataURL(new Blob(chunks,{type:'video/webm'}));return ready;
+  });
+  await page.evaluate(()=>{window.fixtureHidden=false;Object.defineProperty(document,'hidden',{configurable:true,get:()=>window.fixtureHidden});});
+  const videoResult=await apply({media:movie,intro:movie});assert.equal(videoResult.playing,true);assert.equal(videoResult.width,8);
+  assert.equal(await page.locator('main:not([data-retained])').evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)');
+  assert.equal(await page.locator('._background_fixture._surface_fixture').evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)');
+  assert.equal(await page.locator('#pawprint-codex-background > div').count(),0,'default video has no full-screen scrim');
+  await page.waitForFunction(()=>document.querySelector('#pawprint-codex-background video').currentTime>0.1);
+  assert.deepEqual(await page.locator('#pawprint-codex-background video').evaluate(v=>({muted:v.muted,loop:v.loop,controls:v.controls})),{muted:true,loop:true,controls:false});
+  await page.evaluate(()=>{window.fixtureHidden=true;document.dispatchEvent(new Event('visibilitychange'));});
+  assert.equal(await page.locator('#pawprint-codex-background video').evaluate(v=>v.paused),true);
+  await page.evaluate(()=>{window.fixtureHidden=false;document.dispatchEvent(new Event('visibilitychange'));});
+  await page.waitForFunction(()=>!document.querySelector('#pawprint-codex-background video').paused);
+  await page.evaluate(()=>{const home=document.createElement('div');home.id='fixture-home';home.setAttribute('data-codex-composer-root','');home.setAttribute('data-composer-placement','home');home.style.cssText='width:8px;height:8px';document.querySelector('main:not([data-retained])').append(home);});
+  await page.waitForFunction(()=>document.querySelector('video').dataset.phase==='intro');
+  assert.equal(await page.locator('video').evaluate(v=>v.loop),false,'new-chat opening plays once');
+  await page.waitForFunction(()=>document.querySelector('video').dataset.phase==='idle'&&!document.querySelector('video').paused);
+  assert.equal(await page.locator('video').evaluate(v=>v.loop),true,'opening returns to the idle loop');
+  await page.evaluate(()=>{const child=document.createElement('span');document.querySelector('#fixture-home').append(child);});
+  await page.waitForTimeout(80);assert.equal(await page.locator('video').evaluate(v=>v.dataset.phase),'idle','ordinary home mutations do not repeat the opening');
+  await apply({media:image});assert.equal(await page.locator('#pawprint-codex-background video').count(),0);
+  await page.evaluate(()=>{const shell=document.createElement('div');shell.className='shell';const main=document.createElement('main');main.setAttribute('data-app-shell-main-surface','default');shell.append(main);document.querySelector('#root').append(shell);});
+  await page.waitForFunction(()=>document.querySelectorAll('[data-pawprint-background-shell]').length>=3);
+  assert.deepEqual(await apply({}),{applied:false});
+  assert.equal(await page.locator('html').getAttribute('data-theme'),'light');
+  assert.deepEqual(await page.locator('.messaging-root').evaluateAll(es=>es.map(e=>e.getAttribute('data-theme'))),['light',null]);
+  assert.equal(await page.locator('#fixture-settings').evaluate(e=>getComputedStyle(e).marginTop),'46px');
+  assert.equal(await page.locator('main:not([data-retained])').first().evaluate(e=>getComputedStyle(e).backgroundColor),before);
+  assert.equal(await page.locator('[data-pawprint-background-shell],#pawprint-codex-background,html[data-pawprint-background]').count(),0);
+  assert.equal(await page.getByRole('textbox').inputValue(),'Keep my draft');
+  await apply({});
+});
+
+test('invalid debug ports are refused before contacting another process',{skip:process.platform!=='darwin'},async()=>{
+  await assert.rejects(verifyBackgroundEndpoint(80),/Invalid background connection port/);
+});

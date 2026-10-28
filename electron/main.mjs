@@ -5,10 +5,13 @@ import {officialRequester} from './codex-proxy-http.mjs';
 import {refreshCodexProviderIndicator} from './codex-client-refresh.mjs';
 import {readCodexSessionSources} from './codex-session-sources.mjs';
 import {ApprovalObserver} from './approval-observer.mjs';
+import {CodexCapacityRetry,CAPACITY_RETRY_DELAY} from './codex-capacity-retry.mjs';
+import {CodexBackgroundManager} from './codex-background-manager.mjs';
 import {AttentionBridge,validAttentionEvent} from './attention.mjs';
 import {hooksSettingsScript} from './client-settings.mjs';
 import {ClientNavigation} from './client-navigation.mjs';
 import {readWorkTitles,readRecentWorkChats} from './work-titles.mjs';
+import {searchSessions,mutateSessions} from './session-manager.mjs';
 import { workState, workTarget, attentionTarget } from '../core/work.mjs';
 import QRCode from 'qrcode';
 import {encodePetCard,decodePetCard} from '../core/pet-card.mjs';
@@ -23,7 +26,7 @@ import { quotaPresentation } from "../core/quota.mjs";
 import { translateText, translateMenu, formatText } from "../core/i18n.mjs";
 import { IdleDirector, restingPose } from "../core/idle.mjs";
 import { talentById } from "../core/talents.mjs";
-import { GIFT_SKILLS, skillById, ownsSkill, petSkills, socialCast } from "../core/skills.mjs";
+import { skillById, ownsSkill, petSkills, socialCast } from "../core/skills.mjs";
 import {
   app,
   shell,
@@ -73,7 +76,7 @@ app.setPath(
     ? process.env.PAWPRINT_TEST_DATA
     : path.join(app.getPath("appData"), "Pawprint"),
 );
-let attentionBridge,approvalObserver,attentionBubbleEvent;
+let attentionBridge,approvalObserver,attentionBubbleEvent,capacityRetry,clientBackground;
 let codexAccounts, codexAccountsPromise, providerTitles,identityBridge;
 let codexProviderNames = {};
 let codexTrayConnection = null;
@@ -147,6 +150,7 @@ function snapshot() {
     setupGuide:setupGuideValue,
     controlsRevealed:petControlsRevealed,
     attention:attentionBridge ? {...attentionBridge.snapshot(),approval:approvalObserver?.snapshot()} : {status:"off",supported:process.platform==="darwin",lastEventAt:null},
+    capacityRetry:capacityRetry?.snapshot(),
     lan: lan?.auth
       ? lan.snapshot()
       : {
@@ -206,6 +210,11 @@ function createHome(section) {
     ? section
     : null;
   if (home && !home.isDestroyed()) {
+    if (process.platform === "darwin") {
+      app.setActivationPolicy("regular");
+      app.dock.show();
+      app.focus({ steal: true });
+    }
     home.show();
     home.focus();
     if (target) home.webContents.send("paw:navigate", target);
@@ -229,8 +238,14 @@ function createHome(section) {
       sandbox: true,
     },
   });
+  if (process.platform === "darwin") {
+    app.setActivationPolicy("regular");
+    app.dock.show();
+    app.focus({ steal: true });
+  }
   home.on("closed", () => {
     home = null;
+    if (process.platform === "darwin" && !quitting) app.setActivationPolicy("accessory");
   });
   if (target)
     home.webContents.once("did-finish-load", () =>
@@ -509,22 +524,8 @@ function menuTemplate() {
     { label: "去后花园看看", click: () => createHome("garden") },
     { label: "二维码宠物访问卡", click: () => createHome("nearby") },
     { label: "附近的小屋", click: () => createHome("nearby") },
-    { label: "日常小本领", enabled: !!pet, submenu: [...GIFT_SKILLS, ...(pet ? [skillById(petSkills(pet).idle)] : [])].filter(Boolean).map(s => ({ label: s.name,
-      enabled: !!pet, click: () => menuAction(() => performSkill(pet.id, s.id)) })) },
-    { label: "拿出玩具球", enabled: !!pet, click: () => menuAction(playBall) },
-    { label: "待机散步", type: "checkbox", checked: store.state.settings.idleEnabled === true,
-      click: () => menuAction(() => enqueue(() => mutate({ type: "idle-settings", enabled: !store.state.settings.idleEnabled,
-        route: store.state.settings.idleRoute || "line", toys: store.state.settings.idleToys !== false }))) },
-    {
-      label: pet
-        ? `表演：${talentById(pet.talent?.id)?.name ?? "才艺"}`
-        : "先迎接一位伙伴",
-      enabled: !!pet,
-      click: () => perform(pet.id),
-    },
     ...(waiting?[{label:waiting.attention.kind==='approval'?'Codex 等你审批':'Codex 等你回答',click:()=>menuAction(()=>openActivitySession(waiting.threadId))}]:[]),
     { label:"工作会话与便签",click:createWorkPanel },
-    { label:"玩耍与小房间",click:()=>createHome("play") },
     { label: "返回最近 Codex 会话", enabled: validThreadId(workTarget(store.state,activity?.snapshot())?.threadId), click: () => menuAction(openActivitySession) },
     { label: "打开 Codex / ChatGPT", enabled: process.platform === "darwin", click: () => menuAction(openClient) },
     { type: "separator" },
@@ -635,6 +636,12 @@ function syncActivityBubble() {
     activityBubble.update({ pet: petAnchor(), event: attentionBubbleEvent, subtitle: row?.title || null });
     return;
   }
+  const retry=capacityRetry?.snapshot().scheduled[0];
+  if(retry){
+    const seconds=Math.max(0,Math.ceil((retry.retryAt-Date.now())/1000)),english=language()==='en';
+    activityBubble.update({pet:petAnchor(),event:{at:retry.retryAt-CAPACITY_RETRY_DELAY,threadId:retry.threadId,text:seconds>0?(english?`Retry in ${seconds}s`:`${seconds} 秒后重试`):(english?'Retrying…':'正在重试…')},subtitle:english?`Round ${retry.round}/${retry.maxRounds} · Attempt ${retry.attempt}/${retry.maxAttempts}`:`第 ${retry.round}/${retry.maxRounds} 轮 · 第 ${retry.attempt}/${retry.maxAttempts} 次`,expiresAt:retry.retryAt});
+    return;
+  }
   const state = activity?.snapshot(), event = state?.event;
   if (!event || Date.now() - event.at >= 8000) { activityBubble.hide(); return; }
   const remaining = state.activeCount > (event.kind === "completed" ? 0 : 1)
@@ -740,7 +747,7 @@ async function mutate(command) {
   if (command.type === "companion-settings" && !command.enabled && companionBubbleActive) {
     clearTimeout(companionBubbleTimer); companionBubble.hide(); companionBubbleActive = false;
   }
-  if (command.type === "activity") await syncActivity();
+  if (command.type === "activity"||command.type==='capacity-retry') await syncActivity();
   if(command.type==='attention-settings' && !command.enabled)attentionBubbleEvent=null;
   if (command.type === "quota-settings") await syncQuota();
   broadcast();
@@ -748,6 +755,7 @@ async function mutate(command) {
   return snapshot();
 }
 function syncActivity() {
+  capacityRetry?.configure({enabled:store.state.settings.capacityRetryEnabled===true&&store.state.settings.activityEnabled===true,directory:store.state.settings.codexHome || (test&&process.env.PAWPRINT_TEST_CODEX_HOME) || defaultCodexHome()});
   return activity?.configure({
     directory: store.state.settings.codexHome ||
       (test && process.env.PAWPRINT_TEST_CODEX_HOME) || defaultCodexHome(),
@@ -1086,7 +1094,7 @@ function register(channel, handler) {
       (note && channel!=='paw:state') ||
       (dock && !['paw:state','paw:activity-open','paw:activity-panel','paw:helper-guide'].includes(channel)) ||
       (guide && !['paw:state','paw:helper-settings','paw:helper-close'].includes(channel)) ||
-      (channel === 'paw:codex-accounts' && !owner) ||
+      (['paw:codex-accounts','paw:codex-background'].includes(channel) && !owner) ||
       ((channel.startsWith('paw:card-') || channel.startsWith('paw:activity-') || channel.startsWith('paw:attention-')) && !owner && !mini && !dock))return {ok:false,error:tr('来源无效。')};
     if(channel==='paw:command' && /^(play-|room-|work-)/.test(args[0]?.type || '') && !owner && !mini)return {ok:false,error:tr('来源无效。')};
     try {
@@ -1118,6 +1126,7 @@ const allowed = new Set([
   "return-home",
   "train",
   "activity",
+  "capacity-retry",
   "idle-settings",
   "pet-scale",
   "quota-settings",
@@ -1131,6 +1140,7 @@ else {
     try {
       store = new Store(app.getPath("userData"));
       await store.load();
+      if (process.platform === "darwin") app.setActivationPolicy("accessory");
       updates = new UpdateService({
         installed: app.getVersion(),
         openExternal: url => shell.openExternal(url),
@@ -1199,6 +1209,32 @@ else {
         return {...result, titleLabels:providerTitles?.snapshot(),sessions:await readCodexSessionSources(managedCodexHome(),app.getPath('userData'))};
       });
       register("paw:state", () => snapshot());
+      clientBackground=new CodexBackgroundManager({directory:app.getPath('userData'),...(test?{probe:async()=>({pid:null,connected:false})}:{})});
+      await clientBackground.load();if(!test)clientBackground.start();
+      register('paw:codex-background',async(action,input)=>{
+        if(action==='status')return clientBackground.snapshot();
+        if(action==='presets')return clientBackground.presets();
+        if(action==='select-preset')return clientBackground.selectPreset(input);
+        if(action==='reconnect'){
+          if(test)throw Error('测试环境不会重开客户端。');
+          const answer=await dialog.showMessageBox(home,{type:'question',message:tr('重新打开客户端并恢复背景连接？'),detail:tr('正在运行的对话可能被中断。'),buttons:[tr('取消'),tr('重新连接')],defaultId:0,cancelId:0});
+          return answer.response===1?clientBackground.reconnect():clientBackground.snapshot();
+        }
+        throw Error('无效的背景操作。');
+      });
+      register("paw:session-search", async options => searchSessions(managedCodexHome(), options));
+      register("paw:session-mutate", async (action, ids) => {
+        const result = await mutateSessions(managedCodexHome(), action, ids);
+        await syncWorkTitles();
+        await enqueue(async () => {
+          const next = structuredClone(store.state);
+          next.work.recent = next.work.recent.filter(row => !(Array.isArray(ids) && ids.includes(row.threadId) && action === "delete"));
+          if (action === "delete" && ids?.includes(next.work.pinned)) next.work.pinned = null;
+          await store.save(next);
+        });
+        broadcast();
+        return result;
+      });
       register("paw:update-check", () => updates.check());
       register("paw:update-install", () => {
         if (!app.isPackaged) throw new Error("请在安装的应用中执行升级。");
@@ -1510,7 +1546,8 @@ else {
         const recent=await readRecentWorkChats(clientDirectory);
         if(recent.length)await enqueue(()=>mutate({type:'_work-observe',recent}));
       }
-      activity = new CodexActivity({ onChange: activityChanged,onAttention:receiveAttention });
+      capacityRetry=new CodexCapacityRetry({onChange:()=>{if(!quitting)broadcast();}});
+      activity = new CodexActivity({ onChange: activityChanged,onAttention:receiveAttention,onTurn:event=>capacityRetry.consume(event) });
       await syncActivity();
       if(store.state.settings.attentionEnabled)await activity.refreshAttention();
       await queue;await syncWorkTitles();
@@ -1592,6 +1629,8 @@ else {
       event.preventDefault();
       void rememberPosition();
       quitting = true;
+      capacityRetry?.close();
+      clientBackground?.close();
       void Promise.all([identityBridge?.close(),providerTitles?.close(), workTitlesPending, queue, attentionBridge?.close(), approvalObserver?.close(), lan?.close(), activity?.close(), quota?.close()]).finally(() => app.quit());
     }
   });

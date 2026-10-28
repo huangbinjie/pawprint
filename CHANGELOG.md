@@ -2,6 +2,17 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.16.0 — 2026-10-28
+
+- macOS 预制动态皮肤：三套预览、GitHub 按需下载与离线缓存，修正猫咪待机循环。
+- 本机会话模糊搜索与批量归档、取消归档、确认删除。
+- 过载每轮立即重试 5 次，轮间等待 30 秒，最多 3 轮；用户主动重试重新计数。
+- 原生能力使用官方账号连接，聊天继续遵循绑定 Provider；补齐英文与中英文官网说明。
+- Add three preset macOS skins with verified on-demand downloads and offline caching; correct the cat idle loop.
+- Search and batch-manage local chats. Retry overloads up to five times per round, three rounds, with 30-second cooldowns and manual reset.
+- Route native capabilities through the official account; complete bilingual Assistant copy and website updates. Update Electron to 44.10.0.
+- [完整说明 / Full notes](docs/releases/v0.16.0.md)
+
 ## 0.15.4 — 2026-10-23
 
 - macOS 会话持久绑定服务，切换默认 Provider 只影响新会话；重载、重启后保持绑定，删除原连接后明确报错。

@@ -136,6 +136,10 @@ export class ActivityTracker {
         this.markUncertain(source,now,threadId);
       }
     }
+    if(threadId&&validTurn&&['task_started','task_complete','turn_aborted'].includes(p.type))return {
+      threadId,turnId:p.turn_id,type:p.type,at,trigger:p.turn_attribution?.turn_trigger,
+      failed:!!p.error,errorCode:p.error?.codex_error_info,
+    };
   }
   markUncertain(source, now, threadId=this.sessions.get(source)||null) {
     if(threadId && this.recent.has(threadId))this.recent.set(threadId,{threadId,kind:"unknown",at:now});
@@ -175,9 +179,10 @@ export class ActivityTracker {
 
 // Read only appended data in recent session files. No transcript or cursor is persisted.
 export class CodexActivity {
-  constructor({ onChange, onAttention, now = Date.now }) {
+  constructor({ onChange, onAttention, onTurn, now = Date.now }) {
     this.onChange = onChange;
     this.onAttention=onAttention;
+    this.onTurn=onTurn;
     this.now = now;
     this.cursors = new Map();
     this.config = null;
@@ -343,7 +348,9 @@ export class CodexActivity {
               const recordAt=cursor.header?.forkAt!=null?Date.parse(/"timestamp"\s*:\s*"([^"]+)"/.exec(cursor.pending)?.[1]):null;
               const inheritedByTime=cursor.header?.forkAt!=null && Number.isFinite(recordAt) && recordAt<cursor.header.forkAt;
               if(!inheritedByTime && (cursor.ordinal===null || cursor.header?.historyStart==null || cursor.ordinal>=cursor.header.historyStart)) {
-                this.tracker.attentionRecord(cursor.pending,file,this.now());this.tracker.consume(cursor.pending,file,this.now());
+                this.tracker.attentionRecord(cursor.pending,file,this.now());
+                const turn=this.tracker.consume(cursor.pending,file,this.now());
+                if(turn&&cursor.header?.forkAt==null&&cursor.header?.historyStart==null)this.onTurn?.(turn);
               }
             }
             if(cursor.ordinal!==null)cursor.ordinal++;

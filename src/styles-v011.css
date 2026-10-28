@@ -43,7 +43,7 @@
 .codex-tabs { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 24px; }
 .codex-tabs button { padding:10px 18px; border:1px solid var(--border,#dce2d3); border-radius:12px; background:transparent; color:inherit; font:inherit; cursor:pointer; }
 .codex-tabs button.is-active { background:#eaf0e3; border-color:#a5b697; }
-.codex-stack { display:grid; gap:24px; }
+.codex-stack { display:grid; gap:14px; }
 .codex-card { display:grid; gap:20px; padding:24px; min-width:0; }
 .codex-card :is(h2,h3,h4,p,dl) { margin:0; }
 .codex-card p { line-height:1.65; color:#74816b; overflow-wrap:anywhere; }

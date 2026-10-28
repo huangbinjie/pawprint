@@ -63,12 +63,20 @@ export class CodexIdentityBridge {
   baseUrl(id){if(!this.server?.listening)throw Error('本地连接服务尚未启动。');return `http://127.0.0.1:${this.port}/${this.capability}/${id}/v1`;}
   error(res,status,message){if(res.headersSent){res.destroy();return;}res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({error:{message,type:'pawprint_bridge_error'}}));}
   async handle(req,res){
-    const match=/^\/([a-f0-9]{64})\/(openai|pawprint_[a-f0-9]{32})\/v1\/(responses(?:\/compact)?)$/.exec(req.url||'');
-    if(req.method!=='POST'||!match||match[1]!==this.capability){this.error(res,404,'Not found');return;}
+    let requestUrl;
+    try{requestUrl=new URL(req.url||'/', 'http://127.0.0.1');}catch{this.error(res,404,'Not found');return;}
+    const match=/^\/([a-f0-9]{64})\/(openai|pawprint_[a-f0-9]{32})\/v1\/(.+)$/.exec(requestUrl.pathname||'');
+    if(!match||match[1]!==this.capability){this.error(res,404,'Not found');return;}
+    let endpoint;
+    try{endpoint=decodeURIComponent(match[3]);}catch{this.error(res,404,'Not found');return;}
+    if(!endpoint||endpoint.length>256||/[?#\u0000-\u001f\u007f]/.test(endpoint)||endpoint.includes('\\')||endpoint.split('/').some(part=>part==='.'||part==='..')){this.error(res,404,'Not found');return;}
     // Browser-origin requests are not Codex. Never expose a local billing proxy to a website.
     if(req.headers.origin||req.headers['sec-fetch-site']){this.error(res,403,'Browser requests are not supported');return;}
-    if(this.bindingsRequired&&!this.bindingsPrepared){this.error(res,503,'会话服务绑定尚未就绪，已停止转发。请检查 Pawprint 的连接状态。');return;}
-    if(!this.bindingsPrepared&&!this.providers.has(match[2])){this.error(res,404,'Not found');return;}
+    const isCodexRequest=endpoint==='responses'||endpoint==='responses/compact';
+    if(isCodexRequest&&req.method!=='POST'){this.error(res,404,'Not found');return;}
+    if(!isCodexRequest&&!['GET','HEAD','POST'].includes(req.method)){this.error(res,405,'Method not supported');return;}
+    if(isCodexRequest&&this.bindingsRequired&&!this.bindingsPrepared){this.error(res,503,'会话服务绑定尚未就绪，已停止转发。请检查 Pawprint 的连接状态。');return;}
+    if(isCodexRequest&&!this.bindingsPrepared&&!this.providers.has(match[2])){this.error(res,404,'Not found');return;}
     const encoding=(req.headers['content-encoding']||'identity').trim().toLowerCase();
     if(encoding!=='identity'&&!decoders.has(encoding)){this.error(res,415,'Unsupported request encoding');return;}
     const controller=new AbortController();this.requests.add(controller);
@@ -85,6 +93,22 @@ export class CodexIdentityBridge {
         catch(e){this.error(res,e.code==='ERR_BUFFER_TOO_LARGE'?413:400,e.code==='ERR_BUFFER_TOO_LARGE'?'Request too large':'Invalid compressed request');return;}
       }
       if(controller.signal.aborted)return;
+      // The bridge is the Codex chat transport, not a general third-party
+      // OpenAI proxy. Non-Responses requests (for example image generation)
+      // always use the saved official destination and never read a Provider key.
+      if(!isCodexRequest){
+        if(!this.officialBaseUrl){this.error(res,503,'官方连接尚未就绪。');return;}
+        const headers=proxyHeaders(req.headers,{request:true,identity:true});
+        headers['content-type']||='application/json';headers['content-length']=String(body.length);
+        const upstreamRequest=this.officialFetchImpl(this.officialBaseUrl.replace(/\/$/,'')+'/'+endpoint+requestUrl.search,{method:req.method,body:req.method==='GET'||req.method==='HEAD'?undefined:body,redirect:'manual',signal:controller.signal,headers});
+        const upstream=await upstreamRequest;
+        clearTimeout(timeout);
+        if(upstream.status>=300&&upstream.status<400){await upstream.body?.cancel();this.error(res,502,'官方连接重定向不受支持');return;}
+        const responseHeaders=proxyHeaders(upstream.headers);responseHeaders['content-type']||='application/json';responseHeaders['cache-control']='no-store';
+        res.writeHead(upstream.status,responseHeaders);
+        if(upstream.body&&req.method!=='HEAD')await pipeline(Readable.fromWeb(upstream.body),res);else res.end();
+        return;
+      }
       let request;try{request=JSON.parse(body);}catch{this.error(res,400,'Invalid JSON request');return;}
       if(!request||typeof request!=='object'||Array.isArray(request)){this.error(res,400,'Invalid JSON request');return;}
       let routeId=match[2];
@@ -99,18 +123,18 @@ export class CodexIdentityBridge {
       if(provider?.modelSelection==='fixed'&&request.model!==provider.model){request.model=provider.model;body=Buffer.from(JSON.stringify(request));}
       const key=official?null:await this.keychain.get(provider.id);
       const headers=proxyHeaders(req.headers,{request:true,identity:official});
-      headers['content-type']||='application/json';headers.accept||=match[3].endsWith('/compact')?'application/json':'text/event-stream';
+      headers['content-type']||='application/json';headers.accept||=endpoint.endsWith('/compact')?'application/json':'text/event-stream';
       // The official destination comes only from the saved pre-bridge config.
       // Restore native authentication there, never on a third-party route.
       if(!official)headers.authorization=`Bearer ${key}`;
       headers['content-length']=String(body.length);
-      const upstreamRequest=(official?this.officialFetchImpl:this.fetchImpl)((official?this.officialBaseUrl:provider.baseUrl).replace(/\/$/,'')+'/'+match[3],{
+      const upstreamRequest=(official?this.officialFetchImpl:this.fetchImpl)((official?this.officialBaseUrl:provider.baseUrl).replace(/\/$/,'')+'/'+endpoint+requestUrl.search,{
         method:'POST',body,redirect:'manual',signal:controller.signal,
         headers,
       });
       // The attempted destination is known once dispatched, including when the
       // service later fails. Do not wait for response headers or the whole turn.
-      if(match[3]==='responses')void this.routeEvidence.record({threadId:req.headers['thread-id'],providerId:routeId,model:request?.model}).then(()=>this.onRoute()).catch(()=>{});
+      if(endpoint==='responses')void this.routeEvidence.record({threadId:req.headers['thread-id'],providerId:routeId,model:request?.model}).then(()=>this.onRoute()).catch(()=>{});
       const upstream=await upstreamRequest;
       clearTimeout(timeout);
       if(upstream.status>=300&&upstream.status<400){await upstream.body?.cancel();this.error(res,502,'Provider redirects are not supported');return;}
@@ -118,7 +142,7 @@ export class CodexIdentityBridge {
       responseHeaders['content-type']||='application/json';responseHeaders['cache-control']='no-store';
       res.writeHead(upstream.status,responseHeaders);
       if(upstream.body)await pipeline(Readable.fromWeb(upstream.body),res);else res.end();
-      if(match[3]==='responses'&&upstream.status>=200&&upstream.status<300)void this.routeEvidence.recordTurn({threadId:req.headers['thread-id'],turnId:nativeTurnId(req.headers),providerId:routeId,model:request.model}).catch(()=>{});
+      if(endpoint==='responses'&&upstream.status>=200&&upstream.status<300)void this.routeEvidence.recordTurn({threadId:req.headers['thread-id'],turnId:nativeTurnId(req.headers),providerId:routeId,model:request.model}).catch(()=>{});
     }catch{if(!res.destroyed)this.error(res,502,'Provider request failed. Check the connection and keep Pawprint running.');}
     finally{clearTimeout(timeout);this.requests.delete(controller);req.off('aborted',stop);res.off('close',stop);}
   }

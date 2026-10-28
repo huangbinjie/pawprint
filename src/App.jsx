@@ -52,6 +52,8 @@ import PetSizeControl from "./components/PetSizeControl.jsx";
 import {providerLabel} from "../core/provider-labels.mjs";
 import CodexHub, {ProviderUsage} from "./components/CodexHub.jsx";
 import CodexAccounts from "./components/CodexAccounts.jsx";
+import CapacityRetrySettings from "./components/CapacityRetrySettings.jsx";
+import ClientBackgroundSettings from "./components/ClientBackgroundSettings.jsx";
 import QuotaSettings from "./components/QuotaSettings.jsx";
 import SocialScene from "./components/SocialScene.jsx";
 import SkillOdds from "./components/SkillOdds.jsx";
@@ -657,7 +659,9 @@ export default function App() {
           </div>
           {tab === "codex" && <CodexHub
             connections={<CodexAccounts titleLabels={state.providerTitles} />}
-            sessions={<><CodexAccounts mode="titles" titleLabels={state.providerTitles} /><section className="card codex-card"><h3>会话联动</h3><div className="setting-row">
+            skins={<ClientBackgroundSettings/>}
+            manager={<WorkPanel managerOnly state={state} command={command} working={working} onError={text=>setToast({text,error:true})}/>}
+            sessions={<><CodexAccounts mode="titles" titleLabels={state.providerTitles} /><section className="card codex-card codex-session-settings"><h3>会话联动</h3><div className="setting-row">
                   <div>
                     <strong>Codex 会话联动</strong>
                     <p>开工时陪伴，明确区分本轮回复结束、已停止和状态未知。没有其他进行中或状态不明的会话时才庆祝；不发币、不调用模型。</p>
@@ -688,7 +692,7 @@ export default function App() {
                   {{ off: "会话联动已关闭", connecting: "正在连接本地记录…", idle: "已连接，等待新状态记录", completed: "最近一轮回复已结束", stopped: "最近一轮已停止", running: `陪伴中 · ${state.activity?.activeCount || 0} 个会话`, unknown: "记录不完整，暂不能确认当前状态", unavailable: "无法读取会话记录，请检查上方目录；会自动重试" }[state.activity?.status || "off"]}
                   {" · "}{t("仅显示本机 Codex 的新记录。返回入口打开最近有状态更新的会话，不发送消息。")}
                   {state.activity?.target?.threadId && <button className="text-button" onClick={async()=>{const r=await api.openWorkSession();if(!r.ok)setToast({text:r.error,error:true});}}>{t("返回最近 Codex 会话")}</button>}
-                </p></section><WorkPanel state={state} command={command} working={working} onError={text=>setToast({text,error:true})}/></>}
+                </p></section><WorkPanel hideManager state={state} command={command} working={working} onError={text=>setToast({text,error:true})}/></>}
             usage={<><ProviderUsage providerNames={state.providerNames} report={state.usage.report} busy={state.busy||!state.settings.connected} onRefresh={refresh}/><section className="card codex-card"><h3>订阅额度快照</h3><p>不是实时账号查询，不代表当前第三方 API 的余额。</p></section><QuotaSettings state={state} now={tick} working={working} onCommand={command} onRecover={async () => {
                 const r = await api.recoverTray();
                 if (r.ok) setState(r.data); else setToast({ text: r.error, error: true });
@@ -696,7 +700,7 @@ export default function App() {
                 const r = await api.refreshQuota();
                 if (r.ok) setState(r.data); else setToast({ text: r.error, error: true });
               }} /></>}
-            advanced={<><CodexAccounts mode="advanced" titleLabels={state.providerTitles}/>
+            advanced={<><CapacityRetrySettings state={state} command={command} working={working}/><CodexAccounts mode="advanced" titleLabels={state.providerTitles}/>
 <section className="card settings-card">
                 <h3>用量连接</h3>
                 <div className="setting-row">

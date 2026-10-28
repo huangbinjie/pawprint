@@ -75,6 +75,19 @@ test('local bridge replaces provider authentication and never forwards ChatGPT i
  assert.ok(!(await readFile(f.bridge.file,'utf8')).includes('TOKEN'));assert.ok(!(await readFile(f.bridge.file,'utf8')).includes('THIRD_PARTY_KEY'));if(process.platform!=='win32')assert.equal((await stat(f.bridge.file)).mode&0o777,0o600);
  const compact=await fetch(f.bridge.baseUrl(id)+'/responses/compact',{method:'POST',body:'{}'});assert.equal(compact.status,200);assert.equal(await compact.text(),'{}');assert.equal(f.seen[1].path,'/v1/responses/compact');
 });
+test('non-Responses requests bypass Providers and use the saved official destination',async t=>{
+ const f=await setup(t),officialBase=f.provider.baseUrl.replace('/v1','/official/v1');
+ f.bridge.configure([f.provider],{officialBaseUrl:officialBase});
+ f.bridge.bindingsRequired=true;
+ let keyReads=0;f.bridge.keychain.get=async()=>{keyReads++;throw Error('provider key must not be read');};
+ const url=f.bridge.baseUrl(id)+'/images/generations';
+ const response=await fetch(url,{method:'POST',headers:{authorization:'Bearer NATIVE_LOGIN','content-type':'application/json'},body:'{}'});
+ assert.equal(response.status,200);await response.text();
+ assert.equal(f.seen.length,1);assert.equal(f.seen[0].path,'/official/v1/images/generations');
+ assert.equal(f.seen[0].headers.authorization,'Bearer NATIVE_LOGIN');assert.equal(keyReads,0);
+ const browser=await fetch(url,{method:'POST',headers:{Origin:'https://website.example'},body:'{}'});
+ assert.equal(browser.status,403);await browser.text();assert.equal(f.seen.length,1);
+});
 test('observed routes retain only thread/provider/model metadata for native OpenAI-labelled chats',async t=>{
  const f=await setup(t),threadId='01a0f1ea-4534-7651-b950-000000000001';
  const r=await fetch(f.bridge.baseUrl(id)+'/responses',{method:'POST',headers:{'thread-id':threadId,Authorization:'Bearer PRIVATE_LOGIN',Cookie:'PRIVATE_COOKIE'},body:JSON.stringify({model:'test-model',input:'PRIVATE_CONVERSATION'})});await r.text();

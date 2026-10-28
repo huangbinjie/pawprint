@@ -120,3 +120,34 @@ html.is-work-satellite,html.is-work-satellite body,html.is-work-satellite #root{
 
 .floating-pet .reply-return{position:absolute;z-index:5;right:5px;top:101px;width:30px;height:30px;display:grid;place-items:center;padding:0;border:1px solid #d9e1ce;border-radius:50%;background:#f8faefee;color:#829570;font-size:22px;line-height:1;box-shadow:0 2px 5px #3c4a2e12}
 .reply-unread-dot{position:absolute;right:-1px;top:-1px;width:7px;height:7px;border:1px solid #fff;border-radius:50%;background:#caa260;pointer-events:none}
+
+/* A shared deadline keeps countdowns consistent across chat surfaces. */
+.capacity-retry-countdown{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid #e9dcbb;border-radius:12px;background:#f8f1df;color:#8a7042;font-size:11px;line-height:1.4;font-variant-numeric:tabular-nums;white-space:nowrap}
+.work-chat-head .capacity-retry-countdown,.capacity-retry-settings .capacity-retry-countdown{display:flex;width:fit-content;margin:8px 0}
+
+.work-page{gap:14px}
+.codex-stack>.work-page{width:100%;max-width:none;margin:0}
+.codex-hub .codex-session-settings{gap:12px;padding:18px}
+.codex-session-settings .setting-row{padding:12px 0}
+.work-page .client-helpers{padding:18px}
+.client-helpers header h3{margin:0}
+.client-helper-row{margin-top:12px;padding-top:12px}
+.work-page .work-intro{gap:12px;padding:16px 18px}
+.work-intro h3{margin:0 0 5px;font-size:16px}
+.work-intro p{margin:0}
+.codex-hub .capacity-retry-settings{padding:18px}
+.capacity-retry-settings .setting-row{padding:0;border:0;align-items:flex-start}
+.capacity-retry-settings h3{margin:0 0 6px}
+.capacity-retry-settings p{margin:0;font-size:13px;line-height:1.6}
+.capacity-retry-settings small{display:block;margin-top:6px;font-size:11px;color:#8a9b78}
+.capacity-retry-settings .toggle{flex:none;margin-top:1px}
+.session-manager{display:grid;gap:12px}
+.session-search{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid #dfe7d7;border-radius:13px;background:#fbfcf8;color:#8b9a7d}
+.session-search input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:#4a5742;font:inherit;font-size:13px}
+.session-manager-toolbar,.session-bulk-actions,.session-select-all{display:flex;align-items:center;gap:12px;font-size:12px;color:#87947b}
+.session-manager-toolbar>span{margin-left:auto}.session-manager-toolbar label,.session-select-all label{display:flex;align-items:center;gap:6px}.session-manager-toolbar .text-button{display:flex;align-items:center;gap:4px}
+.session-bulk-actions{padding:10px 12px;border:1px solid #e1e8d9;border-radius:12px;background:#f8faf4}.session-bulk-actions span{margin-right:auto}
+.button.danger{border-color:#e5cfc6;background:#fff8f5;color:#a26955}
+.session-results{display:grid;gap:8px}.session-row{display:flex;align-items:center;gap:10px;padding:13px 12px;border:1px solid #e4e9df;border-radius:13px;background:#fff}.session-row.is-archived{background:#faf9f5;opacity:.82}.session-check input{width:16px;height:16px;accent-color:#8fa67e}.session-main{min-width:0;flex:1}.session-main h3{margin:0;overflow-wrap:anywhere;font-size:14px;font-weight:550;color:#526247}.session-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:5px;font-size:11px;color:#9aa58f}.session-meta span+span:before{content:'·';margin-right:8px;color:#c1c9b9}.session-note{display:flex;align-items:center;gap:4px;margin:6px 0 0;font-size:11px;color:#8d9e79}.session-row>.button{flex:none}
+.work-recent{display:grid;gap:10px}.work-recent>h3{margin:0;font-size:15px;color:#627255}
+.session-main mark{padding:0 2px;border-radius:3px;background:#f5df9e;color:inherit}

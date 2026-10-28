@@ -276,6 +276,10 @@ export function transition(current, command, { now, rng, id }) {
     case "float":
       state.settings.floating = Boolean(command.value);
       break;
+    case 'capacity-retry':
+      if(typeof command.enabled!=='boolean')throw new Error('请选择有效的自动重试设置。');
+      state.settings.capacityRetryEnabled=command.enabled;
+      break;
     case "activity":
       if (typeof command.enabled !== "boolean" || typeof command.topics !== "boolean")
         throw new Error("请选择有效的会话联动设置。");

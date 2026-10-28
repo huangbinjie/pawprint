@@ -45,7 +45,7 @@ test("floating canvas never scrolls; English covers all pages, menus and reactio
     for(const tab of ['My Home','My Pets','Garden','Skills & Talents','Nearby Homes','Gene Catalog','Breeding','Usage & Wallet','Codex Assistant','Preferences']) {
       await home.locator('.sidebar').getByRole('button',{name:new RegExp('^'+tab.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'))}).click();
       const texts=await unlocalized(home);if(texts.length)missing[tab]=texts;
-      if(tab==='Codex Assistant'){for(const name of ['Connections & providers','Chats & reminders','Usage & limits','Advanced settings']){await home.locator('.codex-tabs').getByRole('button',{name,exact:true}).click();const extra=await unlocalized(home);if(extra.length)missing[name]=extra;}}
+      if(tab==='Codex Assistant'){for(const name of ['Connections & providers','Chats & reminders','Chat management','Skins','Usage & limits','Advanced settings']){await home.locator('.codex-tabs').getByRole('button',{name,exact:true}).click();const extra=await unlocalized(home);if(extra.length)missing[name]=extra;}}
       if(tab==='My Home')await expect(home.locator('[data-user-text]').filter({hasText:'我的小屋'}).first()).toBeVisible();
       if(['My Home','Skills & Talents','Preferences'].includes(tab))await home.screenshot({path:info.outputPath(`english-${tab.replaceAll(' ','-')}.png`)});
       if(tab==='Gene Catalog') {

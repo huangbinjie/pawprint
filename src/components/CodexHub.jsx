@@ -1,6 +1,6 @@
 import React,{useState} from 'react';
 import {providerLabel} from '../../core/provider-labels.mjs';
-import {t} from '../i18n/locale.js';
+import {t,currentLanguage} from '../i18n/locale.js';
 const money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:6}).format(n);
 const compact=n=>new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(n);
 export function ProviderUsage({report,busy,onRefresh,providerNames={}}){
@@ -10,7 +10,7 @@ export function ProviderUsage({report,busy,onRefresh,providerNames={}}){
   <p>按每条请求的模型名称匹配价格表，分别计算普通输入、缓存和输出费用；匹配不到的模型显示未定价。第三方参考费用不是实际账单。</p><p>实际余额、套餐额度与扣费请以服务商后台为准。</p>
  </section>;
 }
-export default function CodexHub({connections,sessions,usage,advanced}){
+export default function CodexHub({connections,sessions,manager,skins,usage,advanced}){
  const[section,setSection]=useState('connections');
- return <div className="codex-hub"><nav className="codex-tabs" aria-label="Codex 功能分组">{[['connections','连接与 Provider'],['sessions','会话与提醒'],['usage','用量与额度'],['advanced','高级设置']].map(([id,label])=><button key={id} className={section===id?'is-active':''} aria-pressed={section===id} onClick={()=>setSection(id)}>{label}</button>)}</nav><div className="codex-stack">{{connections,sessions,usage,advanced}[section]}</div></div>;
+ return <div className="codex-hub"><nav className="codex-tabs" aria-label="Codex 功能分组">{[['connections','连接与 Provider'],['sessions','会话与提醒'],['manager','会话管理'],['skins',currentLanguage()==='en'?'Skins':'皮肤'],['usage','用量与额度'],['advanced','高级设置']].map(([id,label])=><button key={id} className={section===id?'is-active':''} aria-pressed={section===id} onClick={()=>setSection(id)}>{label}</button>)}</nav><div className="codex-stack">{{connections,sessions,manager,skins,usage,advanced}[section]}</div></div>;
 }

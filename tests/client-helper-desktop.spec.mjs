@@ -1,15 +1,15 @@
 import {test,expect,_electron as electron} from '@playwright/test';
 import {mkdtemp,mkdir,writeFile,readFile,appendFile,rm} from 'node:fs/promises';
 import path from 'node:path';import os from 'node:os';import net from 'node:net';
-import {Store} from '../core/store.mjs';import {seedMatureCompanion} from './fixtures/game.mjs';import {openHome} from './helpers.mjs';
+import {Store} from '../core/store.mjs';import {seedMatureCompanion} from './fixtures/game.mjs';import {openHome,openCodex,openWorkPanelFromMenu} from './helpers.mjs';
 const ids=['01a0f1ea-4534-7651-b950-045a233fe631','01a0f5f7-5a51-7483-9fe6-9e028bc08226'];
 const stateOf=async page=>(await page.evaluate(()=>window.pawprint.getState())).data;
 async function fixture(codex){
- await mkdir(path.join(codex,'ipc'),{recursive:true});const subscribers=new Map(),states=new Map(ids.map(id=>[id,{requests:[],revision:0}])),sockets=new Set();
+ await mkdir(path.join(codex,'ipc'),{recursive:true});const subscribers=new Map(),states=new Map(ids.map(id=>[id,{requests:[],revision:0}])),sockets=new Set(),retries=[];
  function send(socket,message){const bytes=Buffer.from(JSON.stringify(message)),header=Buffer.alloc(4);header.writeUInt32LE(bytes.length);socket.write(Buffer.concat([header,bytes]));}
- function snapshot(socket,id){const s=states.get(id);send(socket,{type:'broadcast',method:'thread-stream-state-changed',version:11,sourceClientId:'fixture-owner',params:{hostId:'local',conversationId:id,change:{type:'snapshot',revision:s.revision,conversationState:{id,requests:s.requests,currentPermissions:{approvalsReviewer:'auto_review'},turns:[{items:[{type:'automaticApprovalReview'}]}]}}}});}
- const server=net.createServer(socket=>{sockets.add(socket);let buffer=Buffer.alloc(0);socket.on('close',()=>{sockets.delete(socket);for(const set of subscribers.values())set.delete(socket);});socket.on('data',chunk=>{buffer=Buffer.concat([buffer,chunk]);while(buffer.length>=4){const length=buffer.readUInt32LE(0);if(buffer.length<length+4)return;const m=JSON.parse(buffer.subarray(4,length+4));buffer=buffer.subarray(length+4);if(m.type==='request')send(socket,{type:'response',requestId:m.requestId,method:m.method,resultType:'success',handledByClientId:'fixture-owner',result:m.method==='initialize'?{clientId:'fixture-reader'}:{}});if(m.type==='broadcast'&&m.method==='thread-stream-following-changed'){const id=m.params.conversationId,set=subscribers.get(id)||new Set();subscribers.set(id,set);if(m.params.following){set.add(socket);snapshot(socket,id);}else set.delete(socket);}}});});
- await new Promise(resolve=>server.listen(path.join(codex,'ipc','ipc.sock'),resolve));return {set(id,requests){const s=states.get(id);s.revision++;s.requests=requests;for(const socket of subscribers.get(id)||[])snapshot(socket,id);},count:()=>[...subscribers.values()].filter(s=>s.size).length,async close(){for(const s of sockets)s.destroy();await new Promise(resolve=>server.close(resolve));}};
+ function snapshot(socket,id){const s=states.get(id);send(socket,{type:'broadcast',method:'thread-stream-state-changed',version:11,sourceClientId:'fixture-owner',params:{hostId:'local',conversationId:id,change:{type:'snapshot',revision:s.revision,conversationState:{id,requests:s.requests,currentPermissions:{approvalsReviewer:'auto_review'},threadRuntimeStatus:{type:s.turn?'systemError':'idle'},turns:s.turn?[{turnId:s.turn,status:'failed',error:{codexErrorInfo:'serverOverloaded'}}]:[{items:[{type:'automaticApprovalReview'}]}]}}}});}
+ const server=net.createServer(socket=>{sockets.add(socket);let buffer=Buffer.alloc(0);socket.on('close',()=>{sockets.delete(socket);for(const set of subscribers.values())set.delete(socket);});socket.on('data',chunk=>{buffer=Buffer.concat([buffer,chunk]);while(buffer.length>=4){const length=buffer.readUInt32LE(0);if(buffer.length<length+4)return;const m=JSON.parse(buffer.subarray(4,length+4));buffer=buffer.subarray(length+4);if(m.method==='thread-follower-start-turn')retries.push(m);if(m.type==='request')send(socket,{type:'response',requestId:m.requestId,method:m.method,resultType:'success',handledByClientId:'fixture-owner',result:m.method==='initialize'?{clientId:'fixture-reader'}:{}});if(m.type==='broadcast'&&m.method==='thread-stream-following-changed'){const id=m.params.conversationId,set=subscribers.get(id)||new Set();subscribers.set(id,set);if(m.params.following){set.add(socket);snapshot(socket,id);}else set.delete(socket);}}});});
+ await new Promise(resolve=>server.listen(path.join(codex,'ipc','ipc.sock'),resolve));return {set(id,requests){const s=states.get(id);s.revision++;s.requests=requests;for(const socket of subscribers.get(id)||[])snapshot(socket,id);},capacity(id,turn){states.get(id).turn=turn;},retries,count:()=>[...subscribers.values()].filter(s=>s.size).length,async close(){for(const s of sockets)s.destroy();await new Promise(resolve=>server.close(resolve));}};
 }
 test('real subscription drives manual signs, clears immediately, and keeps question signs',async({},info)=>{
  test.skip(process.platform!=='darwin','Uses macOS desktop IPC path.');
@@ -31,5 +31,75 @@ test('real subscription drives manual signs, clears immediately, and keeps quest
  // Losing the source withdraws approval signs instead of leaving stale markers.
  ipc.set(ids[1],[manual]);await expect(floating.locator('.attention-sign')).toHaveText(/Approve/);await ipc.close();ipc=null;await expect(floating.locator('.attention-sign')).toHaveCount(0);await expect.poll(async()=>(await stateOf(home)).attention.approval.status).toBe('unavailable');
  const after=await stateOf(home);expect(after.balance).toBe(state.balance);expect(after.pets[0].genome).toEqual(state.pets[0].genome);expect(JSON.stringify(after.work)).not.toContain('PRIVATE');
+ }finally{await app?.close();await ipc?.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('session cards fill the Codex column with compact spacing and actionable note guidance',async({},info)=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'paw-session-layout-')),profile=path.join(root,'profile'),codex=path.join(root,'codex');let app;
+ try{
+  const state=await seedMatureCompanion(profile);state.settings.activityEnabled=true;
+  state.work={version:1,pinned:ids[0],recent:[{threadId:ids[0],at:Date.now(),kind:'completed',unread:false,bookmark:'先看失败的测试，再提交修复',title:'修复登录问题'}]};
+  const store=new Store(profile);await store.load();await store.save(state);await mkdir(path.join(codex,'sessions'),{recursive:true});
+  app=await electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:profile,PAWPRINT_TEST_CODEX_HOME:codex,PAWPRINT_TEST_LAN:'1'}});
+  const home=await openCodex(app,'sessions');await home.setViewportSize({width:1700,height:1000});
+  const layout=await home.locator('.work-page').evaluate(element=>{
+    const column=element.parentElement.getBoundingClientRect(),card=element.querySelector('.client-helpers').getBoundingClientRect(),above=element.previousElementSibling.getBoundingClientRect();
+    return {left:card.left-column.left,width:column.width-card.width,gap:card.top-above.bottom};
+  });
+  expect(Math.abs(layout.left)).toBeLessThanOrEqual(1);expect(Math.abs(layout.width)).toBeLessThanOrEqual(1);expect(layout.gap).toBeGreaterThanOrEqual(0);expect(layout.gap).toBeLessThanOrEqual(16);
+  await expect(home.getByRole('heading',{name:'会话固定与便签',exact:true})).toBeVisible();await expect(home.locator('.work-intro')).toContainText('双击猫咪返回，便签会显示 15 秒。');
+  await home.locator('.work-page').screenshot({path:info.outputPath('compact-session-layout.png')});
+ }finally{await app?.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('capacity retry runs five immediate attempts and shows the next round countdown in each chat surface',async({},info)=>{
+ test.skip(process.platform!=='darwin','Uses macOS desktop IPC path.');
+ const root=await mkdtemp(path.join(os.tmpdir(),'paw-capacity-ui-')),profile=path.join(root,'profile'),codex=path.join(root,'codex');let app,ipc;
+ try{
+  const state=await seedMatureCompanion(profile);Object.assign(state.settings,{language:'en',activityEnabled:true,petScale:.5});const store=new Store(profile);await store.load();await store.save(state);await mkdir(path.join(codex,'sessions'),{recursive:true});
+  const log=path.join(codex,'sessions','capacity.jsonl');await writeFile(log,JSON.stringify({type:'session_meta',payload:{id:ids[0]}})+'\n');ipc=await fixture(codex);
+  const launch=()=>electron.launch({args:['.'],env:{...process.env,PAWPRINT_TEST_MODE:'1',PAWPRINT_TEST_DATA:profile,PAWPRINT_TEST_CODEX_HOME:codex,PAWPRINT_TEST_LAN:'1'}});
+  app=await launch();let home=await openCodex(app,'advanced');
+  const toggle=home.getByRole('switch',{name:'Retry model overloads'});await expect(toggle).toBeChecked();await expect(home.getByRole('checkbox',{name:'Retry model overloads'})).toHaveCount(0);
+  await toggle.click();await expect(toggle).not.toBeChecked();await toggle.click();await expect(toggle).toBeChecked();
+  await expect.poll(async()=>(await stateOf(home)).capacityRetry.enabled).toBe(true);
+  await home.screenshot({path:info.outputPath('capacity-retry-advanced-settings.png')});
+  home=await openCodex(app,'sessions');await expect(home.getByRole('switch',{name:'Retry model overloads'})).toHaveCount(0);
+  home=await openHome(app,'work');
+  const row=payload=>JSON.stringify({timestamp:new Date().toISOString(),type:'event_msg',payload})+'\n';
+  for(let n=0;n<5;n++){
+    const turn='overload-'+n;ipc.capacity(ids[0],turn);const startedAt=Date.now();
+    await appendFile(log,row({type:'task_started',turn_id:turn,...(n?{turn_attribution:{turn_trigger:'capacity_retry_automatic'}}:{})})+row({type:'task_complete',turn_id:turn,error:{codex_error_info:'server_overloaded'}}));
+    await expect.poll(()=>ipc.retries.length,{timeout:10_000}).toBe(n+1);expect(Date.now()-startedAt).toBeLessThan(10_000);
+  }
+  ipc.capacity(ids[0],'overload-5');const failedAt=Date.now();
+  await appendFile(log,row({type:'task_started',turn_id:'overload-5',turn_attribution:{turn_trigger:'capacity_retry_automatic'}})+row({type:'task_complete',turn_id:'overload-5',error:{codex_error_info:'server_overloaded'}}));
+  await expect.poll(async()=>(await stateOf(home)).capacityRetry.status).toBe('waiting');
+  const floating=app.windows().find(window=>window.url().endsWith('#floating'));
+  const petBounds=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>window.webContents.getURL().endsWith('#floating')).getBounds());expect(petBounds.width).toBe(110);
+  await expect.poll(()=>app.windows().some(window=>window.url().startsWith('data:text/html')&&window.url().includes('bubble'))).toBe(true);
+  const bubble=app.windows().find(window=>window.url().startsWith('data:text/html')&&window.url().includes('bubble'));await expect(bubble.locator('.bubble>span')).toHaveText(/Retry in \d+s/);
+  expect(await bubble.locator('.bubble>span').evaluate(element=>element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(18);
+  await bubble.screenshot({path:info.outputPath('readable-capacity-countdown.png'),omitBackground:true});
+  const timer=home.locator('.work-chat').getByRole('timer');await expect(timer).toHaveText(/Retry in \d+s · Round 2\/3 · 1\/5/);
+  const seconds=async locator=>Number(/Retry in (\d+)s/.exec(await locator.innerText())?.[1]);
+  const before=await seconds(timer);await expect.poll(()=>seconds(timer)).toBeLessThan(before);
+  const mini=await openWorkPanelFromMenu(app);await expect(mini.getByRole('timer')).toHaveText(/Retry in \d+s · Round 2\/3 · 1\/5/);
+  expect(Math.abs(await seconds(mini.getByRole('timer'))-await seconds(timer))).toBeLessThanOrEqual(1);
+  await mini.screenshot({path:info.outputPath('capacity-retry-countdown.png')});await mini.getByRole('button',{name:'Close panel',exact:true}).click();
+  await expect.poll(async()=>Number(/Retry in (\d+)s/.exec(await bubble.locator('.bubble>span').innerText())?.[1]),{timeout:20_000}).toBeLessThanOrEqual(14);
+  await expect.poll(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().some(window=>window.getTitle()==='Pawprint Activity Bubble'&&window.isVisible()))).toBe(true);
+  await expect.poll(()=>ipc.retries.length,{timeout:35_000}).toBe(6);expect(Date.now()-failedAt).toBeGreaterThanOrEqual(30_000);expect(Date.now()-failedAt).toBeLessThan(35_000);
+  await expect(timer).toHaveCount(0);
+  await expect.poll(async()=>(await stateOf(home)).capacityRetry.lastAttempt?.status).toBe('requested');
+  expect(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>window.webContents.getURL().endsWith('#floating')).getBounds())).toEqual(petBounds);
+  expect(ipc.retries[0].params.turnStart.request).toEqual({threadId:ids[0],input:[],turnTrigger:'capacity_retry_automatic'});
+  await appendFile(log,row({type:'task_started',turn_id:'retried',turn_attribution:{turn_trigger:'capacity_retry_automatic'}}));
+  await expect.poll(async()=>(await stateOf(home)).capacityRetry.lastAttempt?.status).toBe('started');
+  await appendFile(log,row({type:'task_complete',turn_id:'retried'}));await expect.poll(async()=>(await stateOf(home)).capacityRetry.lastAttempt?.status).toBe('completed');
+  await app.close();app=await launch();home=await openCodex(app,'advanced');await expect(home.getByRole('switch',{name:'Retry model overloads'})).toBeChecked();
+  await expect(home.getByTestId('capacity-retry-status')).toHaveText('Applies to new overloads while Pawprint is running.');expect(ipc.retries).toHaveLength(6);
+  await home.getByRole('switch',{name:'Retry model overloads'}).click();await expect(home.getByRole('switch',{name:'Retry model overloads'})).not.toBeChecked();
+  await app.close();app=await launch();home=await openCodex(app,'advanced');await expect(home.getByRole('switch',{name:'Retry model overloads'})).not.toBeChecked();
  }finally{await app?.close();await ipc?.close();await rm(root,{recursive:true,force:true});}
 });

@@ -115,6 +115,7 @@ export function validateState(state) {
   if (state.companionNotes !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(state.companionNotes?.date || "") || !Number.isInteger(state.companionNotes.count) || state.companionNotes.count < 0 || state.companionNotes.count > 2 || !Number.isFinite(state.companionNotes.lastAt))) throw new Error("Invalid companion initiative history");
   if ((state.settings.workReminder!==undefined && !["quiet","sound","system"].includes(state.settings.workReminder)) || (state.settings.workDnd!==undefined && typeof state.settings.workDnd!=="boolean")) throw new Error("Invalid work reminders");
   if((state.settings.attentionEnabled!==undefined&&typeof state.settings.attentionEnabled!=='boolean'))throw new Error('Invalid client helper settings');
+  if(state.settings.capacityRetryEnabled!==undefined&&typeof state.settings.capacityRetryEnabled!=='boolean')throw new Error('Invalid capacity retry setting');
   if (!validPlayState(state) || !validWorkState(state.work)) throw new Error("Invalid play or work state");
   let balance = 0;
   const entries = new Set();
