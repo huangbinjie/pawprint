@@ -4,13 +4,17 @@
 
 **一点桌面陪伴，也帮你回到对的 Codex 会话。**
 
-[下载 v0.15.4](https://github.com/huangbinjie/pawprint/releases/tag/v0.15.4) · [官网](https://huangbinjie.github.io/pawprint/zh/) · [English](README.md)
+[下载 v0.16.0](https://github.com/huangbinjie/pawprint/releases/tag/v0.16.0) · [官网](https://huangbinjie.github.io/pawprint/zh/) · [English](README.md)
 
 爪印是一款独立开发的桌面伙伴，支持 Windows x64 和 Apple 芯片 Mac。猫咪随本机 Codex 活动成长，身边留着几个实用的工作入口。宠物、提醒和小游戏无需 API key，不额外发起模型请求。
 
 ![爪印的奶油色虎斑猫咪](site/pet.png)
 
 ## Codex 助手
+
+助手还提供本机会话模糊搜索、批量归档／取消归档，以及确认后永久删除。模型过载后每轮**立即重试 5 次**，轮间**等待 30 秒**，最多 **3 轮（15 次重试）**；用户主动点重试会重新计数并取消旧等待，成功或停止后结束自动重试。
+
+macOS 可在「皮肤」中选择**夜窗陪伴、暖阳猫窝、阳光狗屋**。预览图随应用提供，视频从 GitHub 下载并显示进度，校验大小及 SHA-256 后缓存，之后离线可用，无需安装 QQ 音乐。保持 Pawprint 运行，客户端重开后会恢复皮肤。图片生成等原生能力走官方账号连接，不再转发给聊天 Provider；可用性仍取决于账号与客户端。
 
 在一个页面管理连接、会话提醒、用量和高级设置。**macOS** 可添加支持 Responses API 的第三方 Provider，密钥保存到 Keychain；无需退出 Codex 即可修改新会话的默认连接。修改配置前会备份，保留原来的 ChatGPT 登录。已有会话不会自动切换，远端会话不保证使用本机配置。
 
@@ -60,7 +64,7 @@ macOS 上可管理自定义 Responses API 连接，密钥保存在 Keychain。�
 
 详见 [功能与限制](docs/codex-account-manager.md)。
 
-若 macOS Tahoe 中 Pawprint 会随其他应用的菜单栏开关一起隐藏，Release 附带可选的[菜单栏关联修复工具](https://github.com/huangbinjie/pawprint/releases/download/v0.15.4/Pawprint-macos-menubar-association.py)及 SHA-256 文件。默认只预览；加 `--apply` 时先备份、只解除其他应用名下的 Pawprint 关联，失败可回滚。需在已有完整磁盘访问权限的终端执行，会刷新 ControlCenter 和当前用户的偏好设置缓存，不重启 Pawprint 或 Codex。[使用说明](docs/releases/v0.15.4.md)。
+若 macOS Tahoe 中 Pawprint 会随其他应用的菜单栏开关一起隐藏，Release 附带可选的[菜单栏关联修复工具](https://github.com/huangbinjie/pawprint/releases/download/v0.16.0/Pawprint-macos-menubar-association.py)及 SHA-256 文件。默认只预览；加 `--apply` 时先备份、只解除其他应用名下的 Pawprint 关联，失败可回滚。需在已有完整磁盘访问权限的终端执行，会刷新 ControlCenter 和当前用户的偏好设置缓存，不重启 Pawprint 或 Codex。[使用说明](docs/releases/v0.15.4.md)。
 
 ## 用量留在手边
 
@@ -70,9 +74,9 @@ macOS 上可管理自定义 Responses API 连接，密钥保存在 Keychain。�
 
 ## 安装
 
-- [Windows 10/11 x64 安装包](https://github.com/huangbinjie/pawprint/releases/download/v0.15.4/Pawprint-0.15.4-win-x64-setup.exe)
-- [Apple 芯片 Mac 压缩包](https://github.com/huangbinjie/pawprint/releases/download/v0.15.4/Pawprint-0.15.4-mac-arm64.zip)
-- [更新说明与 SHA-256 文件](https://github.com/huangbinjie/pawprint/releases/tag/v0.15.4)
+- [Windows 10/11 x64 安装包](https://github.com/huangbinjie/pawprint/releases/download/v0.16.0/Pawprint-0.16.0-win-x64-setup.exe)
+- [Apple 芯片 Mac 压缩包](https://github.com/huangbinjie/pawprint/releases/download/v0.16.0/Pawprint-0.16.0-mac-arm64.zip)
+- [更新说明与 SHA-256 文件](https://github.com/huangbinjie/pawprint/releases/tag/v0.16.0)
 
 请核对附带的校验文件。Windows 内测包未签名，运行安装程序并保留已有数据。Mac 内测包有完整的临时封装签名，但未使用 Developer ID 和苹果公证。把 Pawprint 放入 Applications；若提示无法验证开发者，点“完成”，到「系统设置 → 隐私与安全性」选择“仍要打开”。若提示已损坏，请停止并反馈该版本。详见 [Mac 签名与安装](docs/RELEASE_SIGNING.md)及 [Windows 支持](docs/WINDOWS.md)。
 
