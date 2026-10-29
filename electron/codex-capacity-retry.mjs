@@ -7,6 +7,10 @@ export const CAPACITY_RETRY_DELAY=30_000;
 export const CAPACITY_RETRIES_PER_ROUND=5;
 export const CAPACITY_RETRY_ROUNDS=3;
 export const CAPACITY_RETRY_LIMIT=CAPACITY_RETRIES_PER_ROUND*CAPACITY_RETRY_ROUNDS;
+export function retryableCapacityError(error) {
+  const code=String(error?.codexErrorInfo||'').toLowerCase(),message=typeof error?.message==='string'?error.message:'';
+  return code==='serveroverloaded'||(code==='internalservererror'&&/high demand|temporary errors|当前需求较高|暂时错误/i.test(message));
+}
 
 export async function retryCapacityTurn({directory,threadId,turnId,signal,socketPath,platform=process.platform}) {
   const endpoint=socketPath||(platform==='win32'?'\\\\.\\pipe\\codex-ipc':path.join(directory,'ipc','ipc.sock'));
@@ -57,7 +61,7 @@ export async function retryCapacityTurn({directory,threadId,turnId,signal,socket
             const entry=history?.islands?.flatMap(island=>island.entries).at(-1);
             const latest=history?history.entitiesByKey?.[entry?.value]:state.turns?.at(-1);
             // A native/manual continuation or stop supersedes this failed turn.
-            if(!['idle','systemError'].includes(state.threadRuntimeStatus?.type)||state.requests.length||latest?.turnId!==turnId||latest.status!=='failed'||latest.error?.codexErrorInfo!=='serverOverloaded'){
+            if(!['idle','systemError'].includes(state.threadRuntimeStatus?.type)||state.requests.length||latest?.turnId!==turnId||latest.status!=='failed'||!retryableCapacityError(latest.error)){
               finish(null,{status:'skipped'});return;
             }
             // Match native capacity retry: empty input, inherited model/mode/permissions.

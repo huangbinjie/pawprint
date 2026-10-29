@@ -6,6 +6,7 @@ import relay from './attention-hook.cjs';
 const CHUNK = 256 * 1024;
 const LIVE_FOR = 120_000;
 const BUBBLE_FOR = 8000;
+const capacityMessage = value => typeof value === 'string' && /high demand|temporary errors|当前需求较高|暂时错误/i.test(value);
 
 // Only a fixed category leaves this function; never display a transcript excerpt.
 export function topicCategory(text) {
@@ -138,7 +139,7 @@ export class ActivityTracker {
     }
     if(threadId&&validTurn&&['task_started','task_complete','turn_aborted'].includes(p.type))return {
       threadId,turnId:p.turn_id,type:p.type,at,trigger:p.turn_attribution?.turn_trigger,
-      failed:!!p.error,errorCode:p.error?.codex_error_info,
+      failed:!!p.error,errorCode:p.error?.codex_error_info==='server_overloaded'||(p.error?.codex_error_info==='internal_server_error'&&capacityMessage(p.error?.message))?'server_overloaded':p.error?.codex_error_info,
     };
   }
   markUncertain(source, now, threadId=this.sessions.get(source)||null) {

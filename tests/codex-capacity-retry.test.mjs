@@ -102,7 +102,7 @@ test('session reading emits only new root lifecycle metadata without retaining e
   await activity.poll();assert.equal(events.length,2);
 });
 
-async function ipcFixture(t,{status='systemError',currentTurn='turn',error='serverOverloaded',pendingRequests=[]}={}){
+async function ipcFixture(t,{status='systemError',currentTurn='turn',error='serverOverloaded',errorMessage,pendingRequests=[]}={}){
   const directory=await mkdtemp(path.join(os.tmpdir(),'paw-capacity-ipc-'));t.after(()=>rm(directory,{recursive:true,force:true}));
   const socketPath=process.platform==='win32'?`\\\\.\\pipe\\paw-capacity-${process.pid}-${Math.random()}`:path.join(directory,'ipc.sock');
   const seen=[],sockets=new Set();
@@ -115,7 +115,7 @@ async function ipcFixture(t,{status='systemError',currentTurn='turn',error='serv
         const n=buffer.readUInt32LE(0);if(buffer.length<n+4)return;const m=JSON.parse(buffer.subarray(4,n+4));buffer=buffer.subarray(n+4);seen.push(m);
         if(m.type==='request')send({type:'response',method:m.method,requestId:m.requestId,resultType:'success',handledByClientId:'owner',result:m.method==='initialize'?{clientId:'self'}:{}});
         if(m.method==='thread-stream-following-changed'){
-          const state={id:threadId,requests:pendingRequests,threadRuntimeStatus:{type:status},turnHistory:{kind:'canonical',history:{islands:[{entries:[{value:'latest'}]}],entitiesByKey:{latest:{turnId:currentTurn,status:'failed',error:{codexErrorInfo:error}}}}}};
+          const state={id:threadId,requests:pendingRequests,threadRuntimeStatus:{type:status},turnHistory:{kind:'canonical',history:{islands:[{entries:[{value:'latest'}]}],entitiesByKey:{latest:{turnId:currentTurn,status:'failed',error:{codexErrorInfo:error,...(errorMessage?{message:errorMessage}:{})}}}}}};
           const message={type:'broadcast',method:'thread-stream-state-changed',version:11,sourceClientId:'owner',targetClientIds:['self'],params:{hostId:'local',conversationId:threadId,change:{type:'snapshot',conversationState:state}}};
           send({...message,sourceClientId:'unrelated-client'});send(message);
         }
@@ -134,6 +134,12 @@ test('a real desktop systemError snapshot can retry with empty input and no mode
   assert.equal(request.targetClientId,'owner');assert.equal(request.version,2);
   assert.deepEqual(request.params,{conversationId:threadId,turnStart:{request:{threadId,input:[],turnTrigger:'capacity_retry_automatic'}}});
   assert.deepEqual(f.seen.filter(m=>m.type==='request').map(m=>m.method),['initialize','thread-owner-discovery','thread-follower-start-turn']);
+});
+test('high-demand internal server errors retry, while generic internal errors stay skipped',async t=>{
+  const demand=await ipcFixture(t,{error:'internalServerError',errorMessage:'We’re currently experiencing high demand, which may cause temporary errors.'});
+  assert.equal((await retryCapacityTurn({...demand,threadId,turnId:'turn',signal:new AbortController().signal})).status,'retried');
+  const generic=await ipcFixture(t,{error:'internalServerError',errorMessage:'backend failed'});
+  assert.equal((await retryCapacityTurn({...generic,threadId,turnId:'turn',signal:new AbortController().signal})).status,'skipped');
 });
 
 for(const [name,state] of [['active chat',{status:'active'}],['manual continuation',{currentTurn:'new-turn'}],['other failure',{error:'usageLimitExceeded'}],['pending approval',{pendingRequests:[{id:1}]}]])test(`native retry skips ${name}`,async t=>{
