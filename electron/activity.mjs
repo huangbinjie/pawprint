@@ -157,6 +157,11 @@ export class ActivityTracker {
     if(this.uncertain.size>64)this.uncertain.delete(this.uncertain.keys().next().value);
   }
   emit(kind,text,at,source,threadId) { this.event={id:++this.sequence,kind,text,at,source,threadId}; }
+  recoverTurn(event, source, now) {
+    const sessionKey=this.sessions.get(source)||source, key=`${sessionKey}:${event.turnId}`;
+    this.seen.add(key);this.turns.set(key,{source,sessionKey,threadId:event.threadId,lastSeen:now,order:++this.observation,topic:null});
+    if(event.threadId)this.recent.set(event.threadId,{threadId:event.threadId,kind:'running',at:now});
+  }
   forget(source, now, gap=false) {
     let removed=false;
     for(const [id,t] of this.turns)if(t.source===source){this.turns.delete(id);removed=true;}
@@ -372,9 +377,13 @@ export class CodexActivity {
           const recovered=[];
           for(const {file,info} of files){
             if(this.now()-info.mtimeMs>CAPACITY_RECOVERY_FOR)continue;
-            try{const size=Math.min(info.size,512*1024),handle=await open(file,'r'),buffer=Buffer.alloc(size);try{const {bytesRead}=await handle.read(buffer,0,size,info.size-size),threadId=this.cursors.get(file)?.header?.threadId;let latest=null;for(const line of buffer.subarray(0,bytesRead).toString('utf8').split('\n')){if(!line)continue;try{const event=capacityTurn(JSON.parse(line),threadId,Date.now());if(event)latest=event;}catch{}}if(latest?.threadId&&latest.type==='task_started')recovered.push(latest);else if(latest?.threadId&&latest.type==='task_complete'&&latest.errorCode==='server_overloaded')recovered.push({...latest,type:'task_started',failed:false,errorCode:undefined},latest);}finally{await handle.close();}}catch{}
+            try{const size=Math.min(info.size,512*1024),handle=await open(file,'r'),buffer=Buffer.alloc(size);try{const {bytesRead}=await handle.read(buffer,0,size,info.size-size),threadId=this.cursors.get(file)?.header?.threadId;let latest=null;for(const line of buffer.subarray(0,bytesRead).toString('utf8').split('\n')){if(!line)continue;try{const event=capacityTurn(JSON.parse(line),threadId,Date.now());if(event)latest=event;}catch{}}if(latest?.threadId&&latest.type==='task_started')recovered.push({...latest,source:file});else if(latest?.threadId&&latest.type==='task_complete'&&latest.errorCode==='server_overloaded')recovered.push({...latest,type:'task_started',failed:false,errorCode:undefined,source:file},{...latest,source:file});}finally{await handle.close();}}catch{}
           }
-          for(const event of recovered.slice(-16))this.onTurn(event);
+          for(const event of recovered.slice(-16)){
+            if(event.type==='task_started')this.tracker.recoverTurn(event,event.source||null,this.now());
+            this.onTurn(event);
+            if(event.type==='task_complete')this.tracker.turns.delete(`${this.tracker.sessions.get(event.source)||event.source}:${event.turnId}`);
+          }
         }
         const events=this.tracker.takeAttentionEvents();if(events.length)await this.onAttention?.(events);this.publish({ enabled: true, ...this.tracker.snapshot(this.now()) });}
     } catch {
