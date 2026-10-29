@@ -22,7 +22,7 @@ import { UpdateService } from "./updater.mjs";
 import { LanService } from "./lan/service.mjs";
 import { CodexActivity, validThreadId } from "./activity.mjs";
 import { QuotaMonitor } from "./quota/monitor.mjs";
-import { quotaPresentation } from "../core/quota.mjs";
+import { quotaPresentation, quotaGuardBlocked } from "../core/quota.mjs";
 import { translateText, translateMenu, formatText } from "../core/i18n.mjs";
 import { IdleDirector, restingPose } from "../core/idle.mjs";
 import { talentById } from "../core/talents.mjs";
@@ -92,6 +92,7 @@ let dragOrigin = null;
 let lan,
   performance = null;
 let activity, lastActivityEvent, quota;
+let quotaGuardState = { enabled: false, blocked: false, status: 'off', error: null };
 let updateNoticeVersion;
 const companionBubble = new ActivityBubble();
 let companionBubbleTimer;
@@ -140,6 +141,7 @@ function snapshot() {
     trayStatus: trayStatus(),
     update: updates?.snapshot() ?? { status: "idle", release: null, error: null },
     quota: quota?.snapshot() ?? { enabled: false, loading: false, data: null, error: null },
+    quotaGuard: quotaGuardState,
     cardVisitors: cardVisitors.filter(v => v.expiresAt > Date.now()),
     displayScale: desktopScale(),
     socialPerformance,
@@ -432,6 +434,7 @@ function menuAction(action) {
 const managedCodexHome = () => test ? (process.env.PAWPRINT_TEST_CODEX_HOME || path.join(app.getPath('userData'),'codex')) : defaultCodexHome();
 function updateCodexTrayConnection(status){
   codexTrayConnection={selected:status.selected,name:status.selected==='openai'?'ChatGPT / OpenAI':status.providers?.find(p=>p.id===status.selected)?.name||status.providerNames?.[status.selected]||status.selected};
+  void syncQuotaGuard();
   if(store&&!quitting)broadcast();
 }
 async function getCodexAccounts() {
@@ -439,7 +442,7 @@ async function getCodexAccounts() {
   const directory = managedCodexHome();
   if (!codexAccountsPromise) codexAccountsPromise = (async () => {
     const keychain=new MacKeychain();
-    identityBridge=process.platform==='darwin'?new CodexIdentityBridge({dataDirectory:app.getPath('userData'),keychain,officialFetchImpl:officialRequester(electronNet.fetch.bind(electronNet)),onRoute:()=>{void providerTitles?.refresh();}}):null;
+    identityBridge=process.platform==='darwin'?new CodexIdentityBridge({dataDirectory:app.getPath('userData'),keychain,officialFetchImpl:officialRequester(electronNet.fetch.bind(electronNet)),onRoute:()=>{void providerTitles?.refresh();},shouldBlock:shouldBlockQuotaRequest}):null;
     const manager = new CodexAccounts({directory, dataDirectory: app.getPath('userData'),keychain,identityBridge,refreshClient:refreshCodexProviderIndicator,onSelection:updateCodexTrayConnection});
     await manager.load();codexAccounts=manager;
     updateCodexTrayConnection(await manager.status());
@@ -749,7 +752,8 @@ async function mutate(command) {
   }
   if (command.type === "activity"||command.type==='capacity-retry') await syncActivity();
   if(command.type==='attention-settings' && !command.enabled)attentionBubbleEvent=null;
-  if (command.type === "quota-settings") await syncQuota();
+  if (command.type === "quota-settings" || command.type === "quota-guard-settings") await syncQuota();
+  if (command.type === "quota-settings" || command.type === "quota-guard-settings") await syncQuotaGuard();
   broadcast();
   syncFloating();
   return snapshot();
@@ -767,8 +771,24 @@ function syncQuota() {
   return quota?.configure({
     directory: store.state.settings.codexHome || (test && process.env.PAWPRINT_TEST_CODEX_HOME) || defaultCodexHome(),
     dataDirectory:app.getPath('userData'),
-    enabled: store.state.settings.quotaEnabled === true,
+    enabled: store.state.settings.quotaEnabled === true || store.state.settings.quotaGuardEnabled === true,
   });
+}
+function syncQuotaGuard() {
+  if (!store) return Promise.resolve();
+  const settings = store.state.settings;
+  const enabled = process.platform === 'darwin' && settings.quotaGuardEnabled === true;
+  const blocked = enabled && shouldBlockQuotaRequest({ routeId: 'openai' });
+  quotaGuardState = { enabled, blocked, status: enabled ? 'proxy' : 'off', error: null };
+  return Promise.resolve();
+}
+function shouldBlockQuotaRequest({ routeId }) {
+  if (process.platform !== 'darwin' || routeId !== 'openai' || !store) return false;
+  const settings = store.state.settings;
+  if (settings.quotaGuardEnabled !== true || !quotaGuardBlocked(quota?.snapshot(), settings.quotaGuardWindow || 'auto', settings.quotaGuardThreshold ?? 10, Date.now())) return false;
+  return { message: language() === 'en'
+    ? 'Pawprint quota protection actively stopped this GPT chat. Switch providers or wait for the GPT quota to recover before continuing.'
+    : 'Pawprint 额度保护已主动暂停此 GPT 会话发送。请切换 Provider，或等待 GPT 额度恢复后再继续。' };
 }
 function resizePetWindow(window, width = FLOAT_SIZE.width) {
   if (!window || window.isDestroyed()) return;
@@ -1129,7 +1149,7 @@ const allowed = new Set([
   "capacity-retry",
   "idle-settings",
   "pet-scale",
-  "quota-settings",
+  "quota-settings", "quota-guard-settings",
   "language",
   "tray-compact",
 ]);
@@ -1554,10 +1574,12 @@ else {
       await approvalObserver.configure(store.state.settings.attentionEnabled===true);
       workTitlesTimer=setInterval(()=>{
         void syncWorkTitles();
+        void syncQuotaGuard();
         if(store.state.settings.attentionEnabled&&attentionBridge.snapshot().status==='question-only')void attentionBridge.prepareDefaults();
       },10000);workTitlesTimer.unref?.();
-      quota = new QuotaMonitor({ onChange: () => { if (!quitting) broadcast(); } });
+      quota = new QuotaMonitor({ onChange: () => { void syncQuotaGuard(); if (!quitting) broadcast(); } });
       await syncQuota();
+      await syncQuotaGuard();
       updateTray();
       syncFloating();
       tickIdle();

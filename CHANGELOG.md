@@ -2,6 +2,16 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.17.0 — 2026-10-29
+
+- 默认开启 GPT 聊天额度保护，默认阈值 10%，可调至 5%–80%；自动优先保护有效的 5 小时额度，否则保护周额度。
+- 在本机会话代理层拦截达到阈值的 OpenAI/GPT 请求，第三方 Provider 不受影响。
+- 主动拦截错误带有 `pawprint_quota_guard` 标记，按当前语言返回中英文提示，并避免触发 Codex 的 429 自动重试。
+- Enable GPT chat quota protection by default with a 10% default threshold and selectable 5%–80% thresholds; automatically prefer a valid 5-hour window, otherwise the weekly window.
+- Block threshold-reached OpenAI/GPT requests at the local session proxy while leaving third-party Providers available.
+- Mark active blocks with `pawprint_quota_guard`, return localized messages and avoid Codex's retryable 429 path.
+- [完整说明 / Full notes](docs/releases/v0.17.0.md)
+
 ## 0.16.0 — 2026-10-28
 
 - macOS 预制动态皮肤：三套预览、GitHub 按需下载与离线缓存，修正猫咪待机循环。

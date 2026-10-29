@@ -88,6 +88,19 @@ test('non-Responses requests bypass Providers and use the saved official destina
  const browser=await fetch(url,{method:'POST',headers:{Origin:'https://website.example'},body:'{}'});
  assert.equal(browser.status,403);await browser.text();assert.equal(f.seen.length,1);
 });
+test('quota protection rejects official responses at the proxy before upstream dispatch',async t=>{
+ const f=await setup(t),threadId='01a0f1ea-4534-7651-b950-000000000020';
+ f.bridge.configure([f.provider],{officialBaseUrl:f.provider.baseUrl});
+ f.bridge.bindingsPrepared=true;f.bridge.bindings.resolve=async()=> 'openai';f.bridge.shouldBlock=()=>({message:'Pawprint 额度保护已主动暂停此 GPT 会话发送。请切换 Provider，或等待 GPT 额度恢复后再继续。'});
+ const blocked=await fetch(f.bridge.baseUrl(id)+'/responses',{method:'POST',headers:{'thread-id':threadId},body:'{}'});
+ assert.equal(blocked.status,400);assert.equal(blocked.headers.get('x-pawprint-error'),'pawprint_quota_guard');const error=await blocked.json();assert.deepEqual(error,{error:{message:'Pawprint 额度保护已主动暂停此 GPT 会话发送。请切换 Provider，或等待 GPT 额度恢复后再继续。',type:'invalid_request_error',code:'pawprint_quota_guard',param:'quota_guard',source:'pawprint'}});assert.equal(f.seen.length,0);
+ f.bridge.shouldBlock=()=>({message:'Pawprint quota protection actively stopped this GPT chat. Switch providers or wait for the GPT quota to recover before continuing.'});
+ const english=await fetch(f.bridge.baseUrl(id)+'/responses',{method:'POST',headers:{'thread-id':threadId},body:'{}'});
+ assert.equal(english.status,400);const englishError=await english.json();assert.equal(englishError.error.message,'Pawprint quota protection actively stopped this GPT chat. Switch providers or wait for the GPT quota to recover before continuing.');assert.equal(f.seen.length,0);
+ f.bridge.shouldBlock=()=>false;
+ const allowed=await fetch(f.bridge.baseUrl(id)+'/responses',{method:'POST',headers:{'thread-id':threadId},body:'{}'});
+ assert.equal(allowed.status,200);await allowed.text();assert.equal(f.seen.length,1);assert.equal(f.seen[0].path,'/v1/responses');
+});
 test('observed routes retain only thread/provider/model metadata for native OpenAI-labelled chats',async t=>{
  const f=await setup(t),threadId='01a0f1ea-4534-7651-b950-000000000001';
  const r=await fetch(f.bridge.baseUrl(id)+'/responses',{method:'POST',headers:{'thread-id':threadId,Authorization:'Bearer PRIVATE_LOGIN',Cookie:'PRIVATE_COOKIE'},body:JSON.stringify({model:'test-model',input:'PRIVATE_CONVERSATION'})});await r.text();

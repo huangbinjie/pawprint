@@ -29,8 +29,8 @@ export async function hasFileChatGPTLogin(directory) {
 // authentication. Native identity is retained only for the saved official
 // target; third-party routes receive only their own configured credentials.
 export class CodexIdentityBridge {
-  constructor({dataDirectory,keychain,fetchImpl=requestProvider,officialFetchImpl=fetchImpl,requireBindings=true,onRoute=()=>{}}) {
-    Object.assign(this,{dataDirectory,keychain,fetchImpl,officialFetchImpl});this.file=path.join(dataDirectory,'codex-identity-bridge.json');this.providers=new Map();this.requests=new Set();
+  constructor({dataDirectory,keychain,fetchImpl=requestProvider,officialFetchImpl=fetchImpl,requireBindings=true,onRoute=()=>{},shouldBlock=()=>false}) {
+    Object.assign(this,{dataDirectory,keychain,fetchImpl,officialFetchImpl,shouldBlock});this.file=path.join(dataDirectory,'codex-identity-bridge.json');this.providers=new Map();this.requests=new Set();
     this.routeEvidence=new CodexRouteEvidence(dataDirectory);this.onRoute=onRoute;
     this.sessionRouting=true;this.bindings=new CodexSessionBindings(dataDirectory);this.bindingsRequired=requireBindings;
   }
@@ -61,7 +61,7 @@ export class CodexIdentityBridge {
     }catch{server.close();this.server=null;throw Error('本地连接服务未能启动。请保持 Pawprint 运行，并检查端口是否被占用。');}
   }
   baseUrl(id){if(!this.server?.listening)throw Error('本地连接服务尚未启动。');return `http://127.0.0.1:${this.port}/${this.capability}/${id}/v1`;}
-  error(res,status,message){if(res.headersSent){res.destroy();return;}res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({error:{message,type:'pawprint_bridge_error'}}));}
+  error(res,status,message,details={}){if(res.headersSent){res.destroy();return;}res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store','X-Pawprint-Error':details.code||'pawprint_bridge_error'});res.end(JSON.stringify({error:{message,type:details.type||'pawprint_bridge_error',...(details.code?{code:details.code}:{}),...(details.param?{param:details.param}:{}),...(details.source?{source:details.source}:{})}}));}
   async handle(req,res){
     let requestUrl;
     try{requestUrl=new URL(req.url||'/', 'http://127.0.0.1');}catch{this.error(res,404,'Not found');return;}
@@ -114,6 +114,8 @@ export class CodexIdentityBridge {
       let routeId=match[2];
       if(this.bindingsPrepared){try{routeId=await this.bindings.resolve(req.headers['thread-id'],routeId);}catch(e){this.error(res,409,e.message);return;}}
       const official=routeId==='openai',provider=official?null:this.providers.get(routeId);
+      const guard=this.shouldBlock({ routeId, threadId: req.headers['thread-id'] });
+      if(official&&guard) { const message=typeof guard==='object'&&typeof guard.message==='string' ? guard.message : 'Pawprint 额度保护已主动暂停此 GPT 会话发送。请切换 Provider，或等待 GPT 额度恢复后再继续。'; this.error(res,400,message,{type:'invalid_request_error',code:'pawprint_quota_guard',source:'pawprint',param:'quota_guard'}); return; }
       if(!official&&!provider){this.error(res,410,'此会话绑定的 Provider 已被删除，请恢复原连接；不会自动切换到其他服务。');return;}
       if(official&&!this.officialBaseUrl){this.error(res,503,'官方连接尚未就绪。');return;}
       if(!official&&(typeof provider.model!=='string'||!provider.model.trim())){this.error(res,502,'Connection model is not configured');return;}

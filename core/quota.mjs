@@ -1,5 +1,20 @@
 export const QUOTA_WINDOWS = ["weekly", "session", "both"];
 export const QUOTA_STALE_MS = 15 * 60_000;
+export const QUOTA_GUARD_THRESHOLDS = [5, 10, 20, 30, 40, 50, 60, 70, 80];
+export const QUOTA_GUARD_WINDOWS = ["auto", ...QUOTA_WINDOWS];
+
+export function quotaGuardBlocked(snapshot, selection = "both", threshold = 10, now = Date.now(), connection = null) {
+  if (!snapshot?.enabled || (connection?.selected && connection.selected !== "openai")) return false;
+  const limit = Number.isFinite(threshold) ? Math.max(0, Math.min(100, threshold)) : 10;
+  const session = snapshot.data?.windows?.session;
+  const keys = selection === "auto"
+    ? [session && Number.isFinite(session.resetAt) && now < session.resetAt ? "session" : "weekly"]
+    : selection === "both" ? ["session", "weekly"] : [selection === "session" ? "session" : "weekly"];
+  return keys.some(key => {
+    const window = snapshot.data?.windows?.[key];
+    return window && Number.isFinite(window.remaining) && Number.isFinite(window.resetAt) && now < window.resetAt && window.remaining <= limit;
+  });
+}
 export function parseQuotaLine(line, now = Date.now()) {
   if (!/"type"\s*:\s*"token_count"/.test(line)) return null;
   let r; try { r = JSON.parse(line); } catch { return null; }

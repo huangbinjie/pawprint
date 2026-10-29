@@ -116,6 +116,9 @@ export function validateState(state) {
   if ((state.settings.workReminder!==undefined && !["quiet","sound","system"].includes(state.settings.workReminder)) || (state.settings.workDnd!==undefined && typeof state.settings.workDnd!=="boolean")) throw new Error("Invalid work reminders");
   if((state.settings.attentionEnabled!==undefined&&typeof state.settings.attentionEnabled!=='boolean'))throw new Error('Invalid client helper settings');
   if(state.settings.capacityRetryEnabled!==undefined&&typeof state.settings.capacityRetryEnabled!=='boolean')throw new Error('Invalid capacity retry setting');
+  if(state.settings.quotaGuardEnabled!==undefined&&typeof state.settings.quotaGuardEnabled!=='boolean')throw new Error('Invalid quota guard setting');
+  if(state.settings.quotaGuardThreshold!==undefined&&(!Number.isInteger(state.settings.quotaGuardThreshold)||state.settings.quotaGuardThreshold<0||state.settings.quotaGuardThreshold>100))throw new Error('Invalid quota guard threshold');
+  if(state.settings.quotaGuardWindow!==undefined&&!['auto','weekly','session','both'].includes(state.settings.quotaGuardWindow))throw new Error('Invalid quota guard window');
   if (!validPlayState(state) || !validWorkState(state.work)) throw new Error("Invalid play or work state");
   let balance = 0;
   const entries = new Set();

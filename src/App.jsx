@@ -55,6 +55,7 @@ import CodexAccounts from "./components/CodexAccounts.jsx";
 import CapacityRetrySettings from "./components/CapacityRetrySettings.jsx";
 import ClientBackgroundSettings from "./components/ClientBackgroundSettings.jsx";
 import QuotaSettings from "./components/QuotaSettings.jsx";
+import QuotaGuardSettings from "./components/QuotaGuardSettings.jsx";
 import SocialScene from "./components/SocialScene.jsx";
 import SkillOdds from "./components/SkillOdds.jsx";
 import { skillById } from "../core/skills.mjs";
@@ -700,7 +701,7 @@ export default function App() {
                 const r = await api.refreshQuota();
                 if (r.ok) setState(r.data); else setToast({ text: r.error, error: true });
               }} /></>}
-            advanced={<><CapacityRetrySettings state={state} command={command} working={working}/><CodexAccounts mode="advanced" titleLabels={state.providerTitles}/>
+            advanced={<><QuotaGuardSettings state={state} working={working} onCommand={command}/><CapacityRetrySettings state={state} command={command} working={working}/><CodexAccounts mode="advanced" titleLabels={state.providerTitles}/>
 <section className="card settings-card">
                 <h3>用量连接</h3>
                 <div className="setting-row">

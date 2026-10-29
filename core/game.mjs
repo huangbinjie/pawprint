@@ -5,7 +5,7 @@ import { recordInteraction } from "./personality.mjs";
 import { entry } from "./ledger.mjs";
 import { IDLE_ROUTES } from "./idle.mjs";
 import { drawSkills, petSkills } from "./skills.mjs";
-import { QUOTA_WINDOWS } from "./quota.mjs";
+import { QUOTA_WINDOWS, QUOTA_GUARD_THRESHOLDS, QUOTA_GUARD_WINDOWS } from "./quota.mjs";
 import { LANGUAGES } from "./i18n.mjs";
 import { drawTalent, trainingCost } from "./talents.mjs";
 import { lanTransition } from "./multiplayer.mjs";
@@ -304,6 +304,12 @@ export function transition(current, command, { now, rng, id }) {
       if (typeof command.enabled !== "boolean" || !QUOTA_WINDOWS.includes(command.window)) throw new Error("请选择有效的额度显示方式。");
       state.settings.quotaEnabled = command.enabled;
       state.settings.quotaWindow = command.window;
+      break;
+    case "quota-guard-settings":
+      if (typeof command.enabled !== "boolean" || !QUOTA_GUARD_WINDOWS.includes(command.window) || !QUOTA_GUARD_THRESHOLDS.includes(command.threshold)) throw new Error("请选择有效的聊天额度保护设置。");
+      state.settings.quotaGuardEnabled = command.enabled;
+      state.settings.quotaGuardThreshold = command.threshold;
+      state.settings.quotaGuardWindow = command.window;
       break;
     case "language":
       if (!LANGUAGES.includes(command.value)) throw new Error("请选择有效的语言。");

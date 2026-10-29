@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, appendFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { parseQuotaLine, quotaPresentation } from "../core/quota.mjs";
+import { parseQuotaLine, quotaPresentation, quotaGuardBlocked } from "../core/quota.mjs";
 import { scanQuota } from "../electron/quota/scan.mjs";
 import { QuotaMonitor } from "../electron/quota/monitor.mjs";
 import { initialState, transition } from "../core/game.mjs";
@@ -37,6 +37,18 @@ test('provider selection replaces both empty and populated quota labels and offi
  }
  assert.equal(quotaPresentation({enabled:true,data},'weekly',now,'zh',{selected:'openai'}).title,'W 44%');
  assert.equal(quotaPresentation({enabled:false,data},'weekly',now,'zh',connection).title,'');
+});
+test('quota guard stops before the selected official allowance is exhausted and ignores third-party providers', () => {
+  const snapshot = { enabled: true, data: { windows: {
+    weekly: { remaining: 12, resetAt: now + 1000 },
+    session: { remaining: 8, resetAt: now + 1000 },
+  } } };
+  assert.equal(quotaGuardBlocked(snapshot, 'both', 10, now, { selected: 'openai' }), true);
+  assert.equal(quotaGuardBlocked(snapshot, 'auto', 10, now, { selected: 'openai' }), true);
+  assert.equal(quotaGuardBlocked(snapshot, 'weekly', 10, now, { selected: 'openai' }), false);
+  assert.equal(quotaGuardBlocked({ enabled: true, data: { windows: { weekly: { remaining: 8, resetAt: now + 1000 } } } }, 'auto', 10, now, { selected: 'openai' }), true);
+  assert.equal(quotaGuardBlocked(snapshot, 'both', 10, now, { selected: 'gateway' }), false);
+  assert.equal(quotaGuardBlocked(snapshot, 'both', 10, now + 2000, { selected: 'openai' }), false);
 });
 async function fixture(t) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "pawprint-quota-"));
@@ -93,4 +105,14 @@ test("display preferences never change currency, genes or usage reward calculati
   const after = transition(before, { type: "quota-settings", enabled: true, window: "both" }, { now });
   assert.deepEqual({ ...after, settings: before.settings }, before);
   assert.throws(() => transition(before, { type: "quota-settings", enabled: true, window: "spark" }, { now }));
+});
+test('quota guard settings are validated and do not alter quota display settings', () => {
+  const before = initialState(now);
+  assert.equal(before.settings.quotaGuardEnabled, true);
+  assert.equal(before.settings.quotaGuardThreshold, 10);
+  assert.equal(before.settings.quotaGuardWindow, 'auto');
+  const after = transition(before, { type: 'quota-guard-settings', enabled: true, threshold: 20, window: 'both' }, { now });
+  assert.equal(after.settings.quotaGuardEnabled, true);
+  assert.equal(after.settings.quotaGuardThreshold, 20);
+  assert.throws(() => transition(before, { type: 'quota-guard-settings', enabled: true, threshold: 7, window: 'both' }, { now }));
 });
