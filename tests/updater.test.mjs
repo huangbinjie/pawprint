@@ -39,6 +39,20 @@ test('updater reports unavailable releases and a later valid release',async()=>{
  result=new Response(JSON.stringify(release),{status:200,headers:{'content-type':'application/json'}});
  assert.equal((await updates.check()).release.version,'0.11.3');
 });
+test('GitHub API rate limits fall back to the public latest release page and direct assets',async()=>{
+ const name='Pawprint-0.11.3-mac-arm64.zip',checksum=`https://github.com/huangbinjie/pawprint/releases/download/v0.11.3/${name}.sha256`;
+ const calls=[];
+ const updates=new UpdateService({platform:'darwin',arch:'arm64',installed:'0.11.2',appPath:'/Applications/Pawprint.app',fetcher:async(url,options={})=>{
+   calls.push([url,options.method||'GET']);
+   if(url.includes('/releases/latest')&&url.includes('api.github.com'))return new Response(JSON.stringify({message:'API rate limit exceeded'}),{status:403});
+   if(url.includes('/releases/latest'))return {ok:true,status:200,url:'https://github.com/huangbinjie/pawprint/releases/tag/v0.11.3',text:async()=>''};
+   if(url.endsWith(name))return new Response('',{status:200,headers:{'content-length':'120000'}});
+   if(url===checksum)return new Response('',{status:200});
+   throw Error(`unexpected ${url}`);
+ }});
+ assert.equal((await updates.check()).release.version,'0.11.3');
+ assert.deepEqual(calls.map(([url,method])=>[url.includes('api.github.com')?'api':url.includes('/releases/latest')?'page':'asset',method]),[['api','GET'],['page','GET'],['asset','HEAD']]);
+});
 test('installer swaps only after old process exits and restores on failure',{skip:process.platform==='win32'},async()=>{
  const dir=await mkdtemp(path.join(tmpdir(),'pawprint-installer-test-'));
  const current=path.join(dir,'Pawprint.app'),ready=path.join(dir,'.Pawprint-new.app'),staging=path.join(dir,'staging');

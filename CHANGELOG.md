@@ -2,6 +2,12 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.17.1 — 2026-10-29
+
+- 修复 GitHub API 匿名额度耗尽导致应用内更新返回 403；改用公开发布页和资产直链回退。
+- Fix in-app updates when GitHub's anonymous API quota returns 403 by falling back to the public release page and direct assets.
+- [完整说明 / Full notes](docs/releases/v0.17.1.md)
+
 ## 0.17.0 — 2026-10-29
 
 - 默认开启 GPT 聊天额度保护，默认阈值 10%，可调至 5%–80%；自动优先保护有效的 5 小时额度，否则保护周额度。

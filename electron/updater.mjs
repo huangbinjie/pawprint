@@ -13,6 +13,7 @@ import { promisify } from 'node:util';
 const run = promisify(execFile);
 export const RELEASE_REPO = 'huangbinjie/pawprint';
 const releaseUrl = `https://api.github.com/repos/${RELEASE_REPO}/releases/latest`;
+const releasePageUrl = `https://github.com/${RELEASE_REPO}/releases/latest`;
 const zipName = version => `Pawprint-${version}-mac-arm64.zip`;
 export function releaseAssetName(version, platform, arch) {
   if (platform === "darwin" && arch === "arm64") return zipName(version);
@@ -45,6 +46,24 @@ async function response(url, fetcher, timeoutMs=45_000) {
   const r=await fetcher(url,{headers:{'User-Agent':'Pawprint-Updater','Accept':'application/vnd.github+json'},signal:AbortSignal.timeout(timeoutMs)});
   if(!r.ok) throw new Error(`GitHub 返回 ${r.status}`);
   return r;
+}
+async function latestReleaseFromPage(fetcher, platform, arch, installed) {
+  const page=await fetcher(releasePageUrl,{headers:{'User-Agent':'Pawprint-Updater'},redirect:'follow',signal:AbortSignal.timeout(45_000)});
+  if(!page.ok) throw new Error(`GitHub 返回 ${page.status}`);
+  const location=typeof page.url==='string'?page.url:'';
+  const html=await page.text();
+  const tag=(location.match(/\/releases\/tag\/(v[^/?#]+)/)||html.match(/releases\/tag\/(v\d+\.\d+\.\d+)/))?.[1];
+  if(!tag) throw new Error('GitHub 发布页缺少版本号。');
+  const version=tag.replace(/^v/,'');
+  if(!newer(tag,installed)) return null;
+  const filename=releaseAssetName(version,platform,arch),checksumName=`${filename}.sha256`;
+  const zip=`https://github.com/${RELEASE_REPO}/releases/download/${tag}/${filename}`;
+  const checksum=`https://github.com/${RELEASE_REPO}/releases/download/${tag}/${checksumName}`;
+  const asset=await fetcher(zip,{method:'HEAD',headers:{'User-Agent':'Pawprint-Updater'},redirect:'follow',signal:AbortSignal.timeout(45_000)});
+  if(!asset.ok) throw new Error(`GitHub 返回 ${asset.status}`);
+  const size=Number(asset.headers.get('content-length'));
+  if(!Number.isSafeInteger(size)||size<=0) throw new Error('GitHub 发布资产缺少大小信息。');
+  return {version,tag,manual:false,filename,platform,arch,page:`https://github.com/${RELEASE_REPO}/releases/tag/${encodeURIComponent(tag)}`,notes:'',zip,checksum,size};
 }
 export function checksumFrom(text, filename) {
   const line=text.trim().split(/\r?\n/).find(x=>x.endsWith(`  ${filename}`));
@@ -171,6 +190,10 @@ export class UpdateService {
     if(['checking','downloading','installing'].includes(this.state.status)) return this.snapshot();
     this.set({status:'checking',error:null});
     try{const raw=await this.fetcher(releaseUrl,{headers:{'User-Agent':'Pawprint-Updater','Accept':'application/vnd.github+json'},signal:AbortSignal.timeout(45_000)});
+      if(raw.status===403){
+        const release=await latestReleaseFromPage(this.fetcher,this.platform,this.arch,this.installed);
+        return this.set({status:release?'available':release===null?'current':'unreleased',release,error:null,checkedAt:Date.now()});
+      }
       if(raw.status===404) return this.set({status:'unreleased',release:null,error:null,checkedAt:Date.now()});
       if(!raw.ok) throw new Error(`GitHub 返回 ${raw.status}`);
       const rawRelease=await raw.json();
