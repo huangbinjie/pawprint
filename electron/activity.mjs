@@ -7,6 +7,14 @@ const CHUNK = 256 * 1024;
 const LIVE_FOR = 120_000;
 const BUBBLE_FOR = 8000;
 const capacityMessage = value => typeof value === 'string' && /high demand|temporary errors|当前需求较高|暂时错误/i.test(value);
+const CAPACITY_RECOVERY_FOR = 30 * 60_000;
+function capacityTurn(record, threadId, now) {
+  const p=record?.payload,at=Date.parse(record?.timestamp);
+  if(!p||!Number.isFinite(at)||now-at>CAPACITY_RECOVERY_FOR||at>now+10_000||typeof p.turn_id!=='string'||!p.turn_id)return null;
+  if(p.type==='task_started')return {threadId,turnId:p.turn_id,type:p.type,at,trigger:p.turn_attribution?.turn_trigger,failed:false};
+  if(p.type==='task_complete')return {threadId,turnId:p.turn_id,type:p.type,at,trigger:p.turn_attribution?.turn_trigger,failed:!!p.error,errorCode:p.error?.codex_error_info==='server_overloaded'||(p.error?.codex_error_info==='internal_server_error'&&capacityMessage(p.error?.message))?'server_overloaded':p.error?.codex_error_info};
+  return null;
+}
 
 // Only a fixed category leaves this function; never display a transcript excerpt.
 export function topicCategory(text) {
@@ -359,7 +367,16 @@ export class CodexActivity {
           }
         }
       }
-      if (generation === this.generation){const events=this.tracker.takeAttentionEvents();if(events.length)await this.onAttention?.(events);this.publish({ enabled: true, ...this.tracker.snapshot(this.now()) });}
+      if (generation === this.generation){
+        if(baseline&&this.onTurn){
+          const recovered=[];
+          for(const {file,info} of files){
+            if(this.now()-info.mtimeMs>CAPACITY_RECOVERY_FOR)continue;
+            try{const size=Math.min(info.size,512*1024),handle=await open(file,'r'),buffer=Buffer.alloc(size);try{const {bytesRead}=await handle.read(buffer,0,size,info.size-size),threadId=this.cursors.get(file)?.header?.threadId;let latest=null;for(const line of buffer.subarray(0,bytesRead).toString('utf8').split('\n')){if(!line)continue;try{const event=capacityTurn(JSON.parse(line),threadId,Date.now());if(event)latest=event;}catch{}}if(latest?.threadId&&latest.type==='task_started')recovered.push(latest);else if(latest?.threadId&&latest.type==='task_complete'&&latest.errorCode==='server_overloaded')recovered.push({...latest,type:'task_started',failed:false,errorCode:undefined},latest);}finally{await handle.close();}}catch{}
+          }
+          for(const event of recovered.slice(-16))this.onTurn(event);
+        }
+        const events=this.tracker.takeAttentionEvents();if(events.length)await this.onAttention?.(events);this.publish({ enabled: true, ...this.tracker.snapshot(this.now()) });}
     } catch {
       if (generation === this.generation) this.publish({ enabled: true, status: "unavailable", activeCount: 0, event: null });
     }

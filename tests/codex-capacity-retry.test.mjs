@@ -101,6 +101,15 @@ test('session reading emits only new root lifecycle metadata without retaining e
   await activity.poll();assert.deepEqual(events.map(e=>[e.type,e.errorCode]),[['task_started',undefined],['task_complete','server_overloaded']]);assert.equal(events[0].trigger,'capacity_retry_automatic');assert.ok(!JSON.stringify(events).includes('PRIVATE'));
   await activity.poll();assert.equal(events.length,2);
 });
+test('startup recovery preserves a recent high-demand failure for retry',async t=>{
+  const directory=await mkdtemp(path.join(os.tmpdir(),'paw-capacity-recovery-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  await mkdir(path.join(directory,'sessions'));const file=path.join(directory,'sessions','root.jsonl');
+  const row=(payload,when)=>JSON.stringify({type:'event_msg',timestamp:new Date(when).toISOString(),payload})+'\n',when=Date.now()-1000;
+  await writeFile(file,JSON.stringify({type:'session_meta',payload:{id:threadId}})+'\n'+row({type:'task_started',turn_id:'old'},when)+row({type:'task_complete',turn_id:'old',error:{codex_error_info:'internal_server_error',message:'We’re currently experiencing high demand, which may cause temporary errors.'}},when));
+  const events=[],activity=new CodexActivity({now:Date.now,onChange:()=>{},onTurn:e=>events.push(e)});t.after(()=>activity.close());
+  await activity.configure({directory,enabled:true,topics:false});
+  assert.deepEqual(events.map(e=>[e.type,e.errorCode]),[['task_started',undefined],['task_complete','server_overloaded']]);
+});
 
 async function ipcFixture(t,{status='systemError',currentTurn='turn',error='serverOverloaded',errorMessage,pendingRequests=[]}={}){
   const directory=await mkdtemp(path.join(os.tmpdir(),'paw-capacity-ipc-'));t.after(()=>rm(directory,{recursive:true,force:true}));
