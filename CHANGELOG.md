@@ -2,6 +2,12 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.17.3 — 2026-10-29
+
+- 修复 Pawprint 启动或重启后漏掉已经开始的 Codex high-demand 失败；恢复最近 30 分钟记录并继续自动重试。
+- Fix missed high-demand Codex failures after Pawprint startup or restart by recovering recent lifecycle records and continuing automatic retries.
+- [完整说明 / Full notes](docs/releases/v0.17.3.md)
+
 ## 0.17.1 — 2026-10-29
 
 - 修复 GitHub API 匿名额度耗尽导致应用内更新返回 403；改用公开发布页和资产直链回退。
