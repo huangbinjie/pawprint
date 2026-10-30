@@ -311,7 +311,8 @@ export default function App() {
   const resting = gardenPets(state);
   const pet = residents.find((p) => p.id === state.activePetId) || residents[0];
   const pendingEgg = state.eggs[0];
-  const partner = PARTNERS.find((p) => p.id === partnerId);
+  const breedingPartners = state?.breedingPartners ?? PARTNERS;
+  const partner = breedingPartners.find((p) => p.id === partnerId) ?? breedingPartners[0];
   const today = state.usage.report?.days.find((d) => d.date === todayKey);
   const claimed = state.usage.days[todayKey]?.claimed || 0;
   const occupied = usedSlots(state);
@@ -1339,14 +1340,18 @@ export default function App() {
                       </span>
                     </div>
                   </div>
-                  <div className="section-label">
-                    <h3>选择一位伙伴</h3>
-                    <span>基因固定 · 没有隐藏加成</span>
+                  <div className="section-label breeding-partner-heading">
+                    <div><h3>选择一位伙伴</h3><span>随机外观 · 繁育费用保持不变</span></div>
+                    <button className="text-button refresh-all" disabled={working || spending < 10}
+                      onClick={async () => {
+                        const next = await command({ type: "refresh-partners" }, "三个繁育伙伴已刷新");
+                        if (next) setPartnerId(next.breedingPartners[0].id);
+                      }}>刷新三个伙伴 · 10 币</button>
                   </div>
                   <div className="partner-grid">
-                    {PARTNERS.map((p) => (
+                    {breedingPartners.map((p) => (
                       <button
-                        className={`partner-card ${p.id === partnerId ? "selected" : ""}`}
+                        className={`partner-card ${p.id === partner.id ? "selected" : ""}`}
                         key={p.id}
                         onClick={() => setPartnerId(p.id)}
                       >
@@ -1357,7 +1362,7 @@ export default function App() {
                           <Coin amount={p.fee} />
                         </div>
                         <span className="radio">
-                          {p.id === partnerId && <Check size={12} />}
+                          {p.id === partner.id && <Check size={12} />}
                         </span>
                       </button>
                     ))}
@@ -1433,7 +1438,7 @@ export default function App() {
                         }
                         onClick={async () => {
                           const next = await command(
-                            { type: "breed", petId: pet.id, partnerId },
+                            { type: "breed", petId: pet.id, partnerId: partner.id },
                             "一枚新的繁育蛋诞生了",
                           );
                           if (next) setTab("home");

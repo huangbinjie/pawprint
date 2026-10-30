@@ -2,6 +2,21 @@ import english from "./i18n-en.mjs";
 export const LANGUAGES = ["zh", "en"];
 export const normalizeMessage = text => text.replace(/\s+/g, " ").trim().replace(/([\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "$1");
 const extras = {
+  '随机外观 · 繁育费用保持不变': 'Random appearances · breeding fees stay the same',
+  '刷新三个伙伴 · 10 币': 'Refresh all three · 10 coins',
+  '三个繁育伙伴已刷新': 'All three breeding partners refreshed',
+  '新伙伴 {0}': 'New partner {0}',
+  '刚刚刷新的随机外观': 'Newly refreshed random appearance',
+  '刷新繁育伙伴': 'Refresh breeding partners',
+  '聊天额度保护': 'Chat quota protection',
+  '额度保护': 'Quota protection',
+  '默认保护 10%。有 5 小时额度时保护 5 小时额度，没有时保护周额度。达到阈值后暂停当前 Codex 发送区域，给切换 Provider 留出余量。': 'Protects the last 10% by default. Uses the five-hour quota when available, otherwise the weekly quota. Pauses Codex sending at the threshold to leave room to switch providers.',
+  '当前仅支持 macOS 本地代理。': 'Currently requires the local proxy on macOS.',
+  '当前代理已暂停官方连接发送。切换 Provider 或关闭保护后恢复。': 'The proxy has paused requests to the official connection. Switch providers or turn off protection to resume.',
+  '只依据本机最近快照，不是实时账号查询。': 'Uses the latest local snapshot, not a live account query.',
+  '保护阈值': 'Protection threshold',
+  '剩余额度达到或低于该百分比就暂停发送。': 'Pause sending when the remaining quota reaches or falls below this percentage.',
+  '请选择有效的聊天额度保护设置。': 'Choose valid chat quota protection settings.',
   '自动下载 Windows 安装包并校验，保存后退出安装并自动重启；宠物与设置会保留。': 'Downloads and verifies the Windows installer, saves your data, then installs and restarts automatically. Pets and settings are preserved.',
   '发现新版本，点击在应用内更新。': 'An update is available. Click to update inside the app.', '更新到 v{0}': 'Update to v{0}', '更新下载进度': 'Update download progress',
 

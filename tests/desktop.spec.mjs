@@ -1,9 +1,10 @@
 import { test, expect, _electron as electron } from "@playwright/test";
-import { mkdtemp, writeFile, readFile, mkdir } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { openHome } from "./helpers.mjs";
 import { Store } from "../core/store.mjs";
+import { entry } from "../core/ledger.mjs";
 import { dayKey } from "../core/economy.mjs";
 import { seedMatureCompanion } from "./fixtures/game.mjs";
 import { desktopUsageFixture } from "./fixtures/codex.mjs";
@@ -22,6 +23,43 @@ async function seedChineseEmpty(directory) {
   Object.assign(store.state.settings,{language:'zh',connected:false,attentionEnabled:false,quotaEnabled:false,activityEnabled:false,idleEnabled:false});
   await store.save(store.state);
 }
+
+test("refreshed breeding partners cost 10 coins and remain selectable after reopening", async ({}, info) => {
+  for (const balance of [40, 240]) {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "pawprint-partners-"));
+    let app;
+    try {
+      const state = await seedMatureCompanion(dir);
+      state.settings.language = "en";
+      if (balance < state.balance) entry(state, balance - state.balance, "test", "Test spending", Date.now(), () => "test-spending");
+      const store = new Store(dir);
+      await store.load();await store.save(state);
+      app = await electron.launch({args:["."],env:{...process.env,PAWPRINT_TEST_MODE:"1",PAWPRINT_TEST_DATA:dir}});
+      let home = await openHome(app, "breed");
+      const refresh = home.getByRole("button", {name:"Refresh all three · 10 coins",exact:true});
+      await expect(refresh).toBeEnabled();
+      await refresh.click();
+      await expect(home.locator(".partner-card h3")).toHaveText(["New partner 1","New partner 2","New partner 3"]);
+      await expect(home.locator(".wallet-pill strong")).toHaveText(String(balance - 10));
+      const refreshed = (await home.evaluate(() => window.pawprint.getState())).data.breedingPartners;
+      await app.close();
+      app = await electron.launch({args:["."],env:{...process.env,PAWPRINT_TEST_MODE:"1",PAWPRINT_TEST_DATA:dir}});
+      home = await openHome(app, "breed");
+      await expect(home.locator(".partner-card.selected h3")).toHaveText("New partner 1");
+      await home.screenshot({path:info.outputPath(`partners-${balance}.png`)});
+      if (balance === 240) {
+        await home.getByRole("button", {name:/^Start breeding/}).click();
+        await expect(home.locator(".wallet-pill strong")).toHaveText("50");
+        const after = (await home.evaluate(() => window.pawprint.getState())).data;
+        expect(after.eggs[0].parents[1].id).toBe(refreshed[0].id);
+        expect(after.eggs[0].parents[1].genome).toEqual(refreshed[0].genome);
+      }
+    } finally {
+      await app?.close();
+      await rm(dir,{recursive:true,force:true});
+    }
+  }
+});
 
 test("gene catalog exposes every obtainable allele, honest odds and appearance variants", async ({}, testInfo) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "pawprint-catalog-"));

@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
 import "./styles-v011.css";
+import "./partner-refresh.css";
 import "./gentle.css";
 if (window.location.hash === "#floating" || window.location.hash.startsWith("#guest:"))
   document.documentElement.classList.add("is-floating");

@@ -1133,6 +1133,7 @@ const allowed = new Set([
   "hatch",
   "rename",
   "select",
+  "refresh-partners",
   "breed",
   "expand",
   "claim",

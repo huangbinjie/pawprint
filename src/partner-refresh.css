@@ -1,0 +1,17 @@
+.breeding-partner-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.breeding-partner-heading > div { min-width: 0; }
+.breeding-partner-heading .refresh-all {
+  flex-shrink: 0;
+  color: #657a5b;
+  background: #eef3e8;
+  border: 1px solid #cbd8c1;
+  border-radius: 7px;
+  padding: 7px 11px;
+  font-size: 11px;
+}
+.breeding-partner-heading .refresh-all:hover:not(:disabled) { background: #e2ebdc; }

@@ -43,6 +43,7 @@ export function initialState(now) {
     freeEggClaimed: false,
     pets: [],
     eggs: [],
+    breedingPartners: structuredClone(PARTNERS),
     ledger: [],
     activePetId: null,
     settings: defaultSettings(),
@@ -59,6 +60,7 @@ export function transition(current, command, { now, rng, id }) {
     return lanTransition(state, command, { now, rng, id });
   if (command.type.startsWith("play-") || command.type.startsWith("room-")) return playTransition(state,command,{now,rng,id});
   if (command.type.startsWith("work-") || ["_work-observe","_work-metadata","_work-attention","attention-settings"].includes(command.type)) return workTransition(state,command,{now});
+  const breedingPartners = state.breedingPartners ?? PARTNERS;
   switch (command.type) {
     case "free-egg": {
       if (state.freeEggClaimed) throw new Error("你的初遇蛋已经领取过了。");
@@ -135,10 +137,22 @@ export function transition(current, command, { now, rng, id }) {
       state.activePetId = command.petId;
       break;
     }
+    case "refresh-partners": {
+      entry(state, -10, "partner-refresh", "刷新繁育伙伴", now, id);
+      state.breedingPartners = PARTNERS.map((base, slot) => ({
+        ...base,
+        id: `refreshed-${slot}-${id()}`,
+        name: `新伙伴 ${slot + 1}`,
+        title: "刚刚刷新的随机外观",
+        genome: randomGenome(rng),
+        talent: drawTalent(rng),
+      }));
+      break;
+    }
     case "breed": {
       room(state);
       const pet = state.pets.find((x) => x.id === command.petId);
-      const partner = PARTNERS.find((x) => x.id === command.partnerId);
+      const partner = breedingPartners.find((x) => x.id === command.partnerId);
       if (!pet || !partner) throw new Error("请选择两位有效的繁育伙伴。");
       const eligibility = breedingEligibility(pet, now, state);
       if (!eligibility.allowed) throw new Error(eligibility.reason);

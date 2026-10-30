@@ -246,3 +246,14 @@ test("unknown commands, invalid names and forged pricing are rejected or ignored
   });
   assert.equal(s.balance, 180);
 });
+
+
+test("refreshing all breeding partners spends one 10-coin fee", () => {
+  let s = fundedPet(3);
+  const before = s.balance;
+  s = run(s, { type: "refresh-partners" });
+  assert.equal(s.balance, before - 10);
+  assert.equal(s.breedingPartners.length, 3);
+  assert.ok(s.breedingPartners.every((p, i) => p.id.startsWith(`refreshed-${i}-`)));
+  assert.deepEqual(s.breedingPartners.map((p) => p.fee), [180, 220, 180]);
+});
