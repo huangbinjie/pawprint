@@ -4,7 +4,13 @@ import {zstdCompressSync,gzipSync,deflateSync,brotliCompressSync,zstdDecompressS
 import {mkdtemp,rm,readFile,writeFile,stat} from 'node:fs/promises';
 import {CodexIdentityBridge,hasFileChatGPTLogin} from '../electron/codex-identity-bridge.mjs';
 import {readRouteEvidence,readTurnRoutes,nativeTurnId} from '../electron/codex-route-evidence.mjs';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {fileURLToPath} from 'node:url';
 const id='pawprint_'+ 'a'.repeat(32);
+test('long streaming replies release parsed transcripts and request buffers',async()=>{
+ await promisify(execFile)(process.execPath,['--expose-gc',fileURLToPath(new URL('../scripts/test-codex-bridge-memory.mjs',import.meta.url))]);
+});
 test('stale file credentials do not override an explicitly selected system or ephemeral credential store',async t=>{
  const directory=await mkdtemp(path.join(os.tmpdir(),'paw-login-store-'));t.after(()=>rm(directory,{recursive:true,force:true}));
  await writeFile(path.join(directory,'auth.json'),JSON.stringify({auth_mode:'chatgpt',tokens:{access_token:'dummy',id_token:'dummy'}}));

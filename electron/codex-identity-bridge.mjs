@@ -86,6 +86,7 @@ export class CodexIdentityBridge {
       const chunks=[];let length=0;
       for await(const chunk of req){length+=chunk.length;if(length>maxRequestBytes){this.error(res,413,'Request too large');return;}chunks.push(chunk);}
       let body=Buffer.concat(chunks);
+      chunks.length=0;
       // Native ChatGPT-authenticated clients send Zstd-compressed JSON. Decode
       // locally; the provider receives plain JSON without identity headers.
       if(encoding!=='identity'){
@@ -101,6 +102,7 @@ export class CodexIdentityBridge {
         const headers=proxyHeaders(req.headers,{request:true,identity:true});
         headers['content-type']||='application/json';headers['content-length']=String(body.length);
         const upstreamRequest=this.officialFetchImpl(this.officialBaseUrl.replace(/\/$/,'')+'/'+endpoint+requestUrl.search,{method:req.method,body:req.method==='GET'||req.method==='HEAD'?undefined:body,redirect:'manual',signal:controller.signal,headers});
+        body=null;
         const upstream=await upstreamRequest;
         clearTimeout(timeout);
         if(upstream.status>=300&&upstream.status<400){await upstream.body?.cancel();this.error(res,502,'官方连接重定向不受支持');return;}
@@ -123,6 +125,9 @@ export class CodexIdentityBridge {
       // the picker's choice, including background titles and compaction.
       // A failed list read must not silently lock an existing GPT connection.
       if(provider?.modelSelection==='fixed'&&request.model!==provider.model){request.model=provider.model;body=Buffer.from(JSON.stringify(request));}
+      // A long SSE reply needs only routing metadata, not the parsed transcript.
+      const model=request.model;
+      request=null;
       const key=official?null:await this.keychain.get(provider.id);
       const headers=proxyHeaders(req.headers,{request:true,identity:official});
       headers['content-type']||='application/json';headers.accept||=endpoint.endsWith('/compact')?'application/json':'text/event-stream';
@@ -134,9 +139,10 @@ export class CodexIdentityBridge {
         method:'POST',body,redirect:'manual',signal:controller.signal,
         headers,
       });
+      body=null;
       // The attempted destination is known once dispatched, including when the
       // service later fails. Do not wait for response headers or the whole turn.
-      if(endpoint==='responses')void this.routeEvidence.record({threadId:req.headers['thread-id'],providerId:routeId,model:request?.model}).then(()=>this.onRoute()).catch(()=>{});
+      if(endpoint==='responses')void this.routeEvidence.record({threadId:req.headers['thread-id'],providerId:routeId,model}).then(()=>this.onRoute()).catch(()=>{});
       const upstream=await upstreamRequest;
       clearTimeout(timeout);
       if(upstream.status>=300&&upstream.status<400){await upstream.body?.cancel();this.error(res,502,'Provider redirects are not supported');return;}
@@ -144,7 +150,7 @@ export class CodexIdentityBridge {
       responseHeaders['content-type']||='application/json';responseHeaders['cache-control']='no-store';
       res.writeHead(upstream.status,responseHeaders);
       if(upstream.body)await pipeline(Readable.fromWeb(upstream.body),res);else res.end();
-      if(endpoint==='responses'&&upstream.status>=200&&upstream.status<300)void this.routeEvidence.recordTurn({threadId:req.headers['thread-id'],turnId:nativeTurnId(req.headers),providerId:routeId,model:request.model}).catch(()=>{});
+      if(endpoint==='responses'&&upstream.status>=200&&upstream.status<300)void this.routeEvidence.recordTurn({threadId:req.headers['thread-id'],turnId:nativeTurnId(req.headers),providerId:routeId,model}).catch(()=>{});
     }catch{if(!res.destroyed)this.error(res,502,'Provider request failed. Check the connection and keep Pawprint running.');}
     finally{clearTimeout(timeout);this.requests.delete(controller);req.off('aborted',stop);res.off('close',stop);}
   }

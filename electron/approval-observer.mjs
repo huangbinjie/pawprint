@@ -57,7 +57,7 @@ export class ApprovalRequests {
 export class ApprovalObserver {
   constructor({getDirectory,getThreads,onEvents,onChange,platform=process.platform,now=Date.now,socketPath}){
     Object.assign(this,{getDirectory,getThreads,onEvents,onChange,platform,now,socketPath});
-    this.enabled=false;this.status='off';this.client='initializing-client';this.pending=new Map();this.following=new Map();this.attempts=new Map();this.buffer=Buffer.alloc(0);this.eventQueue=Promise.resolve();
+    this.enabled=false;this.status='off';this.client='initializing-client';this.pending=new Map();this.following=new Map();this.attempts=new Map();this.frameHeader=Buffer.alloc(0);this.frameChunks=[];this.frameBytes=0;this.expectedFrameBytes=null;this.eventQueue=Promise.resolve();
   }
   snapshot(){return {status:this.status,source:'desktop-ipc',supported:['darwin','win32'].includes(this.platform)};}
   publish(status){if(this.status!==status){this.status=status;this.onChange?.();}}
@@ -92,9 +92,26 @@ export class ApprovalObserver {
     }catch{this.publish('unavailable');}finally{this.refreshing=false;}
   }
   connect(endpoint){
-    const socket=net.createConnection(endpoint);this.socket=socket;this.connectedPath=endpoint;this.buffer=Buffer.alloc(0);
+    const socket=net.createConnection(endpoint);this.socket=socket;this.connectedPath=endpoint;
     socket.on('connect',async()=>{try{const r=await this.request('initialize',{clientType:'pawprint-approval-observer'});if(this.socket!==socket)return;if(r.resultType!=='success'||typeof r.result?.clientId!=='string')throw Error('Unsupported IPC');this.client=r.result.clientId;this.publish('connected');void this.refresh();}catch{socket.destroy();}});
-    socket.on('data',bytes=>{if(this.socket!==socket)return;try{this.buffer=Buffer.concat([this.buffer,bytes]);while(this.buffer.length>=4){const length=this.buffer.readUInt32LE(0);if(!length||length>MAX_FRAME)throw Error('Invalid frame');if(this.buffer.length<length+4)return;const message=JSON.parse(this.buffer.subarray(4,length+4));this.buffer=this.buffer.subarray(length+4);this.message(message);}}catch{socket.destroy();}});
+    socket.on('data',bytes=>{if(this.socket!==socket)return;try{
+      for(let offset=0;offset<bytes.length;){
+        if(this.expectedFrameBytes===null){
+          const take=Math.min(4-this.frameHeader.length,bytes.length-offset);
+          this.frameHeader=Buffer.concat([this.frameHeader,bytes.subarray(offset,offset+take)]);offset+=take;
+          if(this.frameHeader.length<4)continue;
+          const length=this.frameHeader.readUInt32LE(0);this.frameHeader=Buffer.alloc(0);
+          if(!length||length>MAX_FRAME)throw Error('Invalid frame');
+          this.expectedFrameBytes=length;this.frameChunks=[];this.frameBytes=0;
+        }
+        const take=Math.min(this.expectedFrameBytes-this.frameBytes,bytes.length-offset);
+        if(take){this.frameChunks.push(bytes.subarray(offset,offset+take));this.frameBytes+=take;offset+=take;}
+        if(this.frameBytes===this.expectedFrameBytes){
+          const message=JSON.parse(Buffer.concat(this.frameChunks,this.frameBytes).toString());
+          this.frameChunks=[];this.frameBytes=0;this.expectedFrameBytes=null;this.message(message);
+        }
+      }
+    }catch{socket.destroy();}});
     socket.on('error',()=>{});socket.on('close',()=>{if(this.socket===socket){this.disconnect();this.publish(this.enabled?'unavailable':'off');}});
   }
   send(message){if(!this.socket?.writable)throw Error('Disconnected');const bytes=Buffer.from(JSON.stringify(message)),header=Buffer.alloc(4);header.writeUInt32LE(bytes.length);this.socket.write(Buffer.concat([header,bytes]));}
@@ -121,7 +138,7 @@ export class ApprovalObserver {
   disconnect(){
     for(const [id,entry] of this.following){this.follow(id,entry.owner,false);this.clear(entry,id);}
     this.following.clear();this.attempts.clear();for(const p of this.pending.values()){clearTimeout(p.timer);p.reject(Error('Disconnected'));}this.pending.clear();
-    const socket=this.socket;this.socket=null;this.connectedPath=null;this.client='initializing-client';this.buffer=Buffer.alloc(0);if(socket){socket.end();setTimeout(()=>socket.destroy(),200).unref?.();}
+    const socket=this.socket;this.socket=null;this.connectedPath=null;this.client='initializing-client';this.frameHeader=Buffer.alloc(0);this.frameChunks=[];this.frameBytes=0;this.expectedFrameBytes=null;if(socket){socket.end();setTimeout(()=>socket.destroy(),200).unref?.();}
   }
   async close(){await this.configure(false);}
 }

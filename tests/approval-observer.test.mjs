@@ -1,10 +1,14 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import net from 'node:net';import {mkdtemp,rm} from 'node:fs/promises';import path from 'node:path';import os from 'node:os';
 import {ApprovalRequests,ApprovalObserver,approvalId} from '../electron/approval-observer.mjs';
+import {execFile} from 'node:child_process';import {promisify} from 'node:util';import {fileURLToPath} from 'node:url';
 import {initialState,transition} from '../core/game.mjs';import {validateState} from '../core/store.mjs';
 const id='01a0f1ea-4534-7651-b950-045a233fe631',other='01a0f5f7-5a51-7483-9fe6-9e028bc08226';
 const request=(n=81,threadId=id)=>({id:n,method:'item/commandExecution/requestApproval',params:{threadId,turnId:'turn',command:'PRIVATE_COMMAND',reason:'PRIVATE_REASON'}});
 const snapshot=(requests,revision=0)=>({type:'snapshot',revision,conversationState:{id,requests,turns:[{items:[{type:'automaticApprovalReview',status:'inProgress'}]}],currentPermissions:{approvalsReviewer:'auto_review'}}});
+test('large IPC snapshots do not trigger quadratic frame-buffer peaks',async()=>{
+ await promisify(execFile)(process.execPath,['--expose-gc',fileURLToPath(new URL('../scripts/test-approval-observer-memory.mjs',import.meta.url))],{timeout:15000});
+});
 test('manual requests, not reviewer mode or automatic review items, decide approval signs',()=>{
  const state=new ApprovalRequests(id);assert.equal(state.consume(snapshot([])).size,0);
  assert.deepEqual([...state.consume(snapshot([request(),{id:82,method:'item/tool/requestUserInput',params:{threadId:id}},request(83,other)],1))],[approvalId(id,request())]);
