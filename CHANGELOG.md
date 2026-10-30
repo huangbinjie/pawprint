@@ -2,6 +2,14 @@
 
 Release notes for published Pawprint builds. Builds are available for Apple silicon Macs and Windows x64.
 
+## 0.17.4 — 2026-10-30
+
+- 修复大型审批快照造成的内存峰值，减少代理长回复期间保留的对话和缓冲。
+- 支持花费 10 宠物币刷新三个繁育伙伴，保留繁育费用，并修复刷新和重新打开页面后的选择。
+- Fix large approval-snapshot memory spikes and release proxy conversation data earlier during streaming replies.
+- Refresh all three breeding partners for 10 pet coins with unchanged breeding fees and locally saved partners.
+- [完整说明 / Full notes](docs/releases/v0.17.4.md)
+
 ## 0.17.3 — 2026-10-29
 
 - 修复 Pawprint 启动或重启后漏掉已经开始的 Codex high-demand 失败；恢复最近 30 分钟记录并继续自动重试。
